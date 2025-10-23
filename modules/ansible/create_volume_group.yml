@@ -1,0 +1,41 @@
+---
+- name: Build node locations for {{ vg_config.name }}
+  set_fact:
+    vg_node_locations: []
+
+- name: Add node locations for {{ vg_config.name }}
+  set_fact:
+    vg_node_locations: "{{ vg_node_locations + [{'_type': 'NODE_LOCATION', 'node': {'_type': 'NODE', 'name': item.name}}] }}"
+  loop: "{{ storages }}"
+  when: >
+    (vg_config.type == 'all') or 
+    (vg_config.type == 'storage' and item.nodeType == 'OTHER') or 
+    (vg_config.type == 'ecgroup' and item.nodeType == 'ECGROUP')
+
+- name: Create volume group {{ vg_config.name }}
+  uri:
+    url: "https://{{ data_cluster_mgmt_ip }}:8443/mgmt/v1.2/rest/volume-groups"
+    user: "{{ hsuser }}"
+    password: "{{ password }}"
+    method: POST
+    body:
+      name: "{{ vg_config.name }}"
+      _type: "VOLUME_GROUP"
+      expressions:
+        - operator: "IN"
+          locations: "{{ vg_node_locations }}"
+    force_basic_auth: yes
+    status_code: 200
+    body_format: json
+    validate_certs: no
+    timeout: 30
+  register: volume_group_create_result
+  when: vg_node_locations | length > 0
+  until: volume_group_create_result.status == 200
+  retries: 30
+  delay: 10
+
+- name: Debug - Volume Group Creation Result for {{ vg_config.name }}
+  debug:
+    msg: "Volume group {{ vg_config.name }} creation result: Status {{ volume_group_create_result.status | default('N/A') }}"
+  when: volume_group_create_result is defined and volume_group_create_result.changed
