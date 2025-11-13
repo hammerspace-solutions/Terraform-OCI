@@ -1,0 +1,232 @@
+#!/bin/bash
+
+# OCI Storage Server Configuration Script
+# Template variables from Terraform:
+# TARGET_USER: ${TARGET_USER}
+# RAID_LEVEL: ${RAID_LEVEL}
+# BLOCK_VOLUME_COUNT: ${BLOCK_VOLUME_COUNT}
+
+# Set variables
+TARGET_USER="${TARGET_USER}"
+TARGET_HOME="/home/$${TARGET_USER}"
+BLOCK_VOLUME_COUNT=${BLOCK_VOLUME_COUNT}
+RAID_LEVEL="${RAID_LEVEL}"
+
+# Update and install required packages
+sudo apt update
+sudo apt install -y net-tools nfs-common nfs-kernel-server sysstat mdadm lsblk util-linux wget curl
+sudo apt-get -y upgrade
+
+# Configure SSH settings optimized for OCI
+echo "Configuring SSH settings for OCI..."
+sudo tee -a /etc/ssh/ssh_config > /dev/null <<'EOFSS'
+    StrictHostKeyChecking no
+    UserKnownHostsFile /dev/null
+    ServerAliveInterval 60
+    ServerAliveCountMax 3
+    TCPKeepAlive yes
+EOFSS
+
+# Enable strict mode for better error handling
+set -euo pipefail
+
+# Define minimum devices required for each RAID level
+case "$${RAID_LEVEL}" in
+  "raid-0") MIN_DEVICES=2 ;;
+  "raid-5") MIN_DEVICES=3 ;;
+  "raid-6") MIN_DEVICES=4 ;;
+  *)
+    echo "ERROR: Invalid RAID level '$${RAID_LEVEL}' (must be raid-0, raid-5, or raid-6)"
+    exit 1
+    ;;
+esac
+
+# Validate BLOCK_VOLUME_COUNT meets RAID requirements
+if [ "$${BLOCK_VOLUME_COUNT}" -lt "$${MIN_DEVICES}" ]; then
+    echo "ERROR: Configuration mismatch - RAID-$${RAID_LEVEL#raid-} requires at least $${MIN_DEVICES} devices, but BLOCK_VOLUME_COUNT=$${BLOCK_VOLUME_COUNT}"
+    exit 1
+fi
+
+# Wait for OCI block volumes to be attached
+echo "Waiting for OCI block volumes to be attached..."
+echo "Expected data devices: $${BLOCK_VOLUME_COUNT}"
+
+while true; do
+    # Count SCSI devices (typical for OCI block volumes)
+    SCSI_COUNT=$$(ls /dev/sd[b-z] 2>/dev/null | wc -l || echo 0)
+    # Count NVMe devices (some OCI instances)  
+    NVME_COUNT=$$(ls /dev/nvme[1-9]n[0-9] 2>/dev/null | wc -l || echo 0)
+    # Count total non-boot devices
+    TOTAL_COUNT=$$((SCSI_COUNT + NVME_COUNT))
+    
+    if [ "$$TOTAL_COUNT" -ge "$${BLOCK_VOLUME_COUNT}" ]; then
+        echo "Found $$TOTAL_COUNT non-boot devices ($${SCSI_COUNT} SCSI + $${NVME_COUNT} NVMe)"
+        break
+    fi
+    
+    echo "Found $$TOTAL_COUNT of $${BLOCK_VOLUME_COUNT} required data devices ($${SCSI_COUNT} SCSI + $${NVME_COUNT} NVMe)..."
+    sleep 10
+done
+
+echo "All $${BLOCK_VOLUME_COUNT} OCI block volumes found. Proceeding with RAID setup..."
+
+# Get boot device
+BOOT_DEVICE=$$(df / | tail -1 | cut -d' ' -f1 | sed 's/[0-9]*$$//')
+echo "Boot device identified: $${BOOT_DEVICE}"
+
+# Get all available block devices
+ALL_BLOCK_DEVICES=()
+
+# Add SCSI devices
+if ls /dev/sd[a-z] &>/dev/null; then
+    for device in /dev/sd[a-z]; do
+        [ -e "$$device" ] && ALL_BLOCK_DEVICES+=("$$device")
+    done
+fi
+
+# Add NVMe devices
+if ls /dev/nvme[0-9]n[0-9] &>/dev/null; then
+    for device in /dev/nvme[0-9]n[0-9]; do
+        [ -e "$$device" ] && ALL_BLOCK_DEVICES+=("$$device")
+    done
+fi
+
+echo "All block devices found: $${ALL_BLOCK_DEVICES[*]}"
+
+# Filter out the boot device
+RAID_DEVICES=()
+for dev in "$${ALL_BLOCK_DEVICES[@]}"; do
+    if [[ "$$dev" != "$${BOOT_DEVICE}" ]]; then
+        # Additional check: make sure device is not mounted
+        if ! mountpoint -q "$$dev" && ! grep -qs "$$dev" /proc/mounts; then
+            RAID_DEVICES+=("$$dev")
+        fi
+    fi
+done
+
+echo "Devices available for RAID: $${RAID_DEVICES[*]}"
+
+# Prepare devices for RAID
+echo "Preparing devices for RAID..."
+for dev in "$${RAID_DEVICES[@]}"; do
+    echo "Clearing device $$dev..."
+    sudo wipefs -a "$$dev" || true
+    sudo mdadm --zero-superblock "$$dev" 2>/dev/null || true
+done
+
+# Build RAID array
+case "$${RAID_LEVEL}" in
+  "raid-0")
+    raid_options="--level=0 --raid-devices=$${BLOCK_VOLUME_COUNT}"
+    ;;
+  "raid-5") 
+    raid_options="--level=5 --raid-devices=$${BLOCK_VOLUME_COUNT}"
+    ;;
+  "raid-6")
+    raid_options="--level=6 --raid-devices=$${BLOCK_VOLUME_COUNT}"
+    ;;
+esac
+
+echo "Creating $${RAID_LEVEL} array with $${BLOCK_VOLUME_COUNT} devices: $${RAID_DEVICES[*]}"
+
+# Create RAID array
+sudo mdadm --create --verbose /dev/md0 \
+    $$raid_options \
+    --force \
+    "$${RAID_DEVICES[@]}"
+
+# Wait for RAID to be ready
+echo "Waiting for RAID array to be ready..."
+sudo mdadm --wait /dev/md0
+
+# Create filesystem
+echo "Creating XFS filesystem..."
+sudo mkfs.xfs -f /dev/md0
+
+# Create mountpoint
+sudo mkdir -p /hsvol1
+
+# Add to fstab
+echo "Configuring fstab..."
+echo "/dev/md0 /hsvol1 xfs defaults,nofail,discard,noatime,largeio 0 0" | sudo tee -a /etc/fstab
+
+# Mount filesystem
+echo "Mounting filesystem..."
+sudo mount /hsvol1
+
+# Set permissions
+sudo chmod 777 /hsvol1
+
+# Configure NFS exports
+echo "Configuring NFS exports..."
+echo "/hsvol1 *(rw,sync,no_root_squash,no_subtree_check)" | sudo tee -a /etc/exports
+
+# Configure NFS server for Ubuntu
+sudo tee /etc/nfs.conf.d/local.conf > /dev/null <<'EOFNFS'
+[nfsd]
+threads = 128
+
+[mountd]
+manage-gids = 1
+EOFNFS
+
+# Increase NFS threads
+sudo tee /etc/default/nfs-kernel-server > /dev/null <<'EOFNFSS'
+RPCNFSDCOUNT=128
+RPCMOUNTDOPTS="--manage-gids"
+EOFNFSS
+
+# Start services
+sudo systemctl enable nfs-kernel-server rpcbind
+sudo systemctl restart nfs-kernel-server rpcbind
+
+# Apply optimizations
+echo "Applying OCI storage optimizations..."
+sudo tee -a /etc/sysctl.conf > /dev/null <<'EOFSYS'
+# OCI Storage optimizations
+vm.dirty_ratio = 15
+vm.dirty_background_ratio = 5
+vm.dirty_expire_centisecs = 1500
+vm.dirty_writeback_centisecs = 500
+net.core.rmem_default = 262144
+net.core.rmem_max = 16777216
+net.core.wmem_default = 262144
+net.core.wmem_max = 16777216
+EOFSYS
+
+sudo sysctl -p
+
+# Save RAID configuration
+echo "Saving RAID configuration..."
+sudo mdadm --detail --scan | sudo tee -a /etc/mdadm/mdadm.conf
+
+# Update initramfs
+sudo update-initramfs -u
+
+# Create info file
+sudo tee /home/$${TARGET_USER}/oci-storage-info.txt > /dev/null <<EOFINFO
+=== OCI Storage Server Configuration ===
+Date: $$(date)
+Target User: $${TARGET_USER}
+RAID Level: $${RAID_LEVEL}
+Devices: $${RAID_DEVICES[*]}
+Mount Point: /hsvol1
+Filesystem: XFS
+NFS Export: /hsvol1
+
+=== RAID Status ===
+$$(sudo mdadm --detail /dev/md0)
+
+=== Mount Status ===
+$$(df -h /hsvol1)
+
+=== NFS Exports ===
+$$(sudo exportfs -v)
+EOFINFO
+
+sudo chown $${TARGET_USER}:$${TARGET_USER} /home/$${TARGET_USER}/oci-storage-info.txt
+
+echo "=== OCI Storage Server Configuration Complete ==="
+echo "RAID Level: $${RAID_LEVEL}"
+echo "Mount Point: /hsvol1"
+echo "NFS Export: /hsvol1"

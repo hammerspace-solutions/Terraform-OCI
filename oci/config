@@ -1,0 +1,6 @@
+[DEFAULT]
+user=ocid1.user.oc1..
+fingerprint=e6:f8:ec:5d:bd:
+tenancy=ocid1.tenancy.oc1..
+region=us-sanjose-1
+key_file=/home/serviceadmin/.oci/oci_api_key.pem
