@@ -11,7 +11,7 @@ set -euo pipefail
 ANSIBLE_LIB_PATH="/usr/local/lib/ansible_functions.sh"
 INVENTORY_FILE="/var/ansible/trigger/inventory.ini"
 STATE_FILE="/var/run/ansible_jobs_status/configured_ecgroup_nodes.txt"  # Track configured ECGroup nodes
-ECGROUP_PRIVATE_KEY_PATH="/etc/ansible/keys/ansible"
+ECGROUP_PRIVATE_KEY_PATH="/home/ubuntu/.ssh/ansible_admin_key"
 
 # --- Source the function library ---
 if [ ! -f "$ANSIBLE_LIB_PATH" ]; then
