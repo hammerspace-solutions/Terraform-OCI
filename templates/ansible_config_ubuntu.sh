@@ -176,10 +176,102 @@ EOF
 
 chown $ANSIBLE_USER:$ANSIBLE_USER ${ANSIBLE_HOME}/ansible.cfg
 
-# Build the Anvil ansible playbook variables for OCI
+#############################################################################
+# Deploy Modular Ansible Job Scripts
+#############################################################################
+
+echo "Deploying modular Ansible job scripts..."
+
+# Create directories for ansible jobs and state tracking
+sudo mkdir -p /usr/local/ansible/jobs
+sudo mkdir -p /usr/local/lib
+sudo mkdir -p /var/run/ansible_jobs_status
+sudo mkdir -p /var/ansible/trigger
+
+# Deploy ansible function library
+%{ for filename, content in ANSIBLE_JOB_FILES ~}
+%{ if filename == "ansible_functions.sh" ~}
+echo "Deploying ${filename}..."
+echo "${content}" | base64 -d | sudo tee /usr/local/lib/ansible_functions.sh > /dev/null
+sudo chmod +x /usr/local/lib/ansible_functions.sh
+%{ endif ~}
+%{ endfor ~}
+
+# Deploy job scripts
+%{ for filename, content in ANSIBLE_JOB_FILES ~}
+%{ if filename != "ansible_functions.sh" && filename != "README.md" && filename != "TERRAFORM_INTEGRATION.md" ~}
+echo "Deploying ${filename}..."
+echo "${content}" | base64 -d | sudo tee /usr/local/ansible/jobs/${filename} > /dev/null
+sudo chmod +x /usr/local/ansible/jobs/${filename}
+%{ endif ~}
+%{ endfor ~}
+
+echo "Ansible job scripts deployed successfully."
+
+#############################################################################
+# Create Inventory File for Job Scripts
+#############################################################################
+
+echo "Creating inventory file for Ansible job scripts..."
+
+# Get ECGroup variables
+ECGROUP_INSTANCES="${ECGROUP_INSTANCES}"
+ECGROUP_NODES="${ECGROUP_NODES}"
+ECGROUP_METADATA_ARRAY="${ECGROUP_METADATA_ARRAY}"
+ECGROUP_STORAGE_ARRAY="${ECGROUP_STORAGE_ARRAY}"
+
+# Check if we have storage instances
+STORAGE_COUNT=$(echo '${STORAGE_INSTANCES}' | jq '. | length')
+ECGROUP_INSTANCES_ARRAY=($ECGROUP_INSTANCES)
+ECGROUP_NODES_ARRAY=($ECGROUP_NODES)
+
+# Create inventory file at /var/ansible/trigger/inventory.ini
+cat > /var/ansible/trigger/inventory.ini << 'INV_EOF'
+[all:vars]
+hs_username = admin@localdomain
+hs_password = ${ADMIN_USER_PASSWORD}
+volume_group_name = ${VG_NAME}
+share_name = ${SHARE_NAME}
+ecgroup_metadata_array = ${ECGROUP_METADATA_ARRAY}
+ecgroup_storage_array = ${ECGROUP_STORAGE_ARRAY}
+
+[hammerspace]
+INV_EOF
+
+# Add Hammerspace/Anvil IPs if available
+if [ -n "${MGMT_IP}" ]; then
+    echo "${MGMT_IP}" >> /var/ansible/trigger/inventory.ini
+fi
+
+# Add storage_servers section
+echo "" >> /var/ansible/trigger/inventory.ini
+echo "[storage_servers]" >> /var/ansible/trigger/inventory.ini
+
+# Add storage instances if available
+if [ "$STORAGE_COUNT" -gt 0 ]; then
+    echo '${STORAGE_INSTANCES}' | jq -r '.[] | .private_ip + " node_name=\"" + .name + "\""' >> /var/ansible/trigger/inventory.ini
+fi
+
+# Add ecgroup_nodes section
+echo "" >> /var/ansible/trigger/inventory.ini
+echo "[ecgroup_nodes]" >> /var/ansible/trigger/inventory.ini
+
+# Add ECGroup nodes if available
+if [ $${#ECGROUP_NODES_ARRAY[@]} -gt 0 ]; then
+    for i in "$${!ECGROUP_NODES_ARRAY[@]}"; do
+        instance_name="$${ECGROUP_INSTANCES_ARRAY[$i]:-ecgroup-node-$i}"
+        node_ip="$${ECGROUP_NODES_ARRAY[$i]}"
+        echo "$node_ip node_name=\"$instance_name\"" >> /var/ansible/trigger/inventory.ini
+    done
+fi
+
+echo "Inventory file created at /var/ansible/trigger/inventory.ini"
+cat /var/ansible/trigger/inventory.ini
+
+# Build the Anvil ansible playbook variables for OCI (for backward compatibility)
 cat > /tmp/anvil.yml << EOF
 data_cluster_mgmt_ip: "${MGMT_IP}"
-hsuser: admin 
+hsuser: admin
 password: "${ADMIN_USER_PASSWORD}"
 volume_group_name: "${VG_NAME}"
 share_name: "${SHARE_NAME}"
@@ -188,17 +280,8 @@ oci_region: "$${OCI_REGION:-}"
 oci_compartment_id: "$${OCI_COMPARTMENT_ID:-}"
 EOF
 
-# Build the Nodes ansible playbook for OCI
+# Build the Nodes ansible playbook for OCI (for backward compatibility)
 # Handle all scenarios: storage only, ecgroup only, both, or none
-
-# Get ECGroup variables early for nodes.yml creation
-ECGROUP_INSTANCES="${ECGROUP_INSTANCES}"
-ECGROUP_NODES="${ECGROUP_NODES}"
-
-# Check if we have storage instances
-STORAGE_COUNT=$(echo '${STORAGE_INSTANCES}' | jq '. | length')
-ECGROUP_INSTANCES_ARRAY=($ECGROUP_INSTANCES)
-ECGROUP_NODES_ARRAY=($ECGROUP_NODES)
 
 # Start creating nodes.yml
 echo "storages:" > /tmp/nodes.yml
@@ -364,57 +447,45 @@ sudo -u $ANSIBLE_USER bash -c "
     }
 "
 
-# Get the main Ansible playbook from the git repository (OCI version)
-echo "Getting the Hammerspace ansible playbook optimized for OCI..."
+#############################################################################
+# Execute Modular Ansible Job Scripts
+#############################################################################
+
+echo "Executing modular Ansible job scripts..."
+
+# Execute job scripts in sequence if we have Hammerspace configured
 if [ -n "${MGMT_IP}" ]; then
-    sudo wget -O /tmp/hs-ansible.yml https://raw.githubusercontent.com/hammerspace-solutions/Terraform-OCI/main/modules/ansible/hs-ansible.yml || {
-        # Fallback to the original version if OCI-specific version not available
-        echo "OCI-specific playbook not found, using original version..."
-        sudo wget -O /tmp/hs-ansible.yml https://raw.githubusercontent.com/hammerspace-solutions/Terraform-AWS/main/modules/ansible/ansible_job_files/hs-ansible.yml
+    echo "==> Step 1: Adding storage nodes..."
+    sudo /usr/local/ansible/jobs/20-add-storage-nodes.sh || {
+        echo "Warning: Storage node addition failed or no new nodes to add"
     }
-    
-    echo "Running Hammerspace ansible to configure OCI storage..."
-    sudo -u $ANSIBLE_USER ansible-playbook /tmp/hs-ansible.yml -e @/tmp/anvil.yml -e @/tmp/nodes.yml -e @/tmp/share.yml
+
+    echo "==> Step 2: Managing volume groups..."
+    sudo /usr/local/ansible/jobs/21-add-volume-groups.sh || {
+        echo "Warning: Volume group management failed or no changes needed"
+    }
+
+    echo "Hammerspace storage configuration complete"
+else
+    echo "No Hammerspace management IP configured, skipping storage configuration"
 fi
 
-# Handle ECGroup configuration for OCI
-# ECGROUP_INSTANCES and ECGROUP_NODES already defined earlier
-ECGROUP_HOSTS="${ECGROUP_HOSTS}"
-ECGROUP_METADATA_ARRAY="${ECGROUP_METADATA_ARRAY}"
-ECGROUP_STORAGE_ARRAY="${ECGROUP_STORAGE_ARRAY}"
-
+# Handle ECGroup configuration for OCI using modular script
 if [ -n "${ECGROUP_INSTANCES}" ]; then
-    echo "Setting up ECGroup on OCI:"
-    echo "INSTANCES :$ECGROUP_INSTANCES"
-    echo "HOSTS     :$ECGROUP_HOSTS"
-    echo "NODES     :$ECGROUP_NODES"
-    echo "METADATA  :$ECGROUP_METADATA_ARRAY"
-    echo "STORAGE   :$ECGROUP_STORAGE_ARRAY"
-    
-    # Wait for the OCI instances with enhanced timeout
-    PEERS=($ECGROUP_NODES)
-    ALL=true
+    echo "==> Step 3: Configuring ECGroup cluster..."
+    echo "INSTANCES :${ECGROUP_INSTANCES}"
+    echo "NODES     :${ECGROUP_NODES}"
+    echo "METADATA  :${ECGROUP_METADATA_ARRAY}"
+    echo "STORAGE   :${ECGROUP_STORAGE_ARRAY}"
 
-    for ip in "$${PEERS[@]}"; do
-        echo "Waiting for OCI instance $ip to open port 22..."
+    # Execute ECGroup configuration script
+    sudo /usr/local/ansible/jobs/30-configure-ecgroup.sh || {
+        echo "Warning: ECGroup configuration failed or no new nodes to configure"
+    }
 
-        SECONDS=0
-        while ! nc -z -w1 "$ip" 22 &>/dev/null; do
-            sleep 5
-            if (( SECONDS >= 600 )); then  # Increased timeout for OCI
-                echo "ERROR: OCI instance $ip did not open port 22 after 600 seconds."
-                ALL=false
-                break
-            fi
-        done
-    done
-
-    if $ALL; then
-        echo "All OCI instances are ready, provisioning ECGroup!"
-        sudo -u $ANSIBLE_USER ansible-playbook /tmp/ecgroup.yml -i "${ECGROUP_HOSTS},"
-    else
-        echo "Can't get all OCI instances in a ready state!"
-    fi
+    echo "ECGroup configuration complete"
+else
+    echo "No ECGroup instances configured, skipping ECGroup setup"
 fi
 
 # Run the Ansible playbook to distribute the SSH keys
@@ -454,6 +525,15 @@ Share Name: $${SHARE_NAME:-"Not specified"}
 === ECGroup Configuration ===
 ECGroup Instances: $${ECGROUP_INSTANCES:-"None"}
 ECGroup Nodes: $${ECGROUP_NODES:-"None"}
+
+=== Modular Job Scripts ===
+Job Scripts Location: /usr/local/ansible/jobs/
+Function Library: /usr/local/lib/ansible_functions.sh
+Inventory File: /var/ansible/trigger/inventory.ini
+State Tracking: /var/run/ansible_jobs_status/
+
+Available Scripts:
+$(ls -la /usr/local/ansible/jobs/ 2>/dev/null || echo "Scripts not deployed")
 
 === Next Steps ===
 1. Run 'ansible all -m ping' to test connectivity

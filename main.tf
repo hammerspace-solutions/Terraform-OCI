@@ -549,7 +549,7 @@ module "ansible" {
   mgmt_ip                = flatten(module.hammerspace[*].management_ip)
   anvil_instances        = flatten(module.hammerspace[*].anvil_instances)
   storage_instances      = flatten(module.storage_servers[*].instance_details)
-  ecgroup_instances      = [for n in flatten(module.ecgroup[*].nodes) : n.id]
+  ecgroup_instances      = [for n in flatten(module.ecgroup[*].nodes) : n.name]
   ecgroup_nodes          = [for n in flatten(module.ecgroup[*].nodes) : n.private_ip]
   ecgroup_metadata_array = length(module.ecgroup) > 0 ? module.ecgroup[0].metadata_array : ""
   ecgroup_storage_array  = length(module.ecgroup) > 0 ? module.ecgroup[0].storage_array : ""

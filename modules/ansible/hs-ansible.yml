@@ -158,12 +158,12 @@
         body: >-
           {{
             {
-              "name": "{{ volume_group_name }}",
+              "name": volume_group_name,
               "_type": "VOLUME_GROUP",
               "expressions": [
                 {
                   "operator": "IN",
-                  "locations": "{{ vg_node_locations }}"
+                  "locations": vg_node_locations
                 }
               ]
             }
@@ -172,11 +172,11 @@
         status_code: 200
         body_format: json
         validate_certs: no
-        timeout: 5
+        timeout: 30
       register: volume_group_create_result
       when: vg_node_locations is defined and vg_node_locations | length > 0 and volume_group_name not in vg_names
       until: volume_group_create_result.status == 200
-      retries: 5
+      retries: 30
       delay: 10
       notify: Volume group creation failed
       tags:

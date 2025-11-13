@@ -68,12 +68,16 @@ if [ "$OS_TYPE" = "oracle" ]; then
     sudo firewall-cmd --permanent --add-port=50000-51000/tcp
     sudo firewall-cmd --reload
 else
-    # Configure ufw for Ubuntu
-    sudo ufw allow 22/tcp
-    sudo ufw allow 873/tcp
-    sudo ufw allow 9090/tcp
-    sudo ufw allow 50000:51000/tcp
-    sudo ufw --force enable
+    # Configure ufw for Ubuntu/Debian
+    if command -v ufw &> /dev/null; then
+        sudo ufw allow 22/tcp
+        sudo ufw allow 873/tcp
+        sudo ufw allow 9090/tcp
+        sudo ufw allow 50000:51000/tcp
+        sudo ufw --force enable
+    else
+        echo "ufw not available on this system, skipping firewall configuration"
+    fi
 fi
 
 # SSH Key Management for OCI

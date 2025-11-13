@@ -79,7 +79,7 @@ output "metadata_array" {
 
 output "storage_array" {
   description = "ECGroup storage array description"
-  value       = "OCI_BLOCK_${var.storage_block_size}GB"
+  value       = var.storage_block_count > 0 ? "OCI_BLOCK_${var.storage_block_size}GB" : "LOCAL_NVME_DENSEIO"
 }
 
 # Detailed volume information
@@ -129,7 +129,7 @@ output "node_volume_mapping" {
         attachment_id   = oci_core_volume_attachment.metadata_volume_attachments[idx].id
         attachment_type = oci_core_volume_attachment.metadata_volume_attachments[idx].attachment_type
       }
-      storage_volumes = [
+      storage_volumes = var.storage_block_count > 0 ? [
         for vol_idx in range(var.storage_block_count) : {
           volume_id       = oci_core_volume.storage_volumes[idx * var.storage_block_count + vol_idx].id
           volume_name     = oci_core_volume.storage_volumes[idx * var.storage_block_count + vol_idx].display_name
@@ -137,7 +137,8 @@ output "node_volume_mapping" {
           attachment_id   = oci_core_volume_attachment.storage_volume_attachments[idx * var.storage_block_count + vol_idx].id
           attachment_type = oci_core_volume_attachment.storage_volume_attachments[idx * var.storage_block_count + vol_idx].attachment_type
         }
-      ]
+      ] : []
+      local_nvme_note = var.storage_block_count == 0 ? "Using local NVMe drives (DenseIO shape)" : null
     }
   }
 }
@@ -148,6 +149,8 @@ output "deployment_summary" {
   value = {
     node_count               = var.node_count
     shape                    = var.shape
+    is_denseio_shape         = can(regex("DenseIO", var.shape))
+    local_nvme_note          = can(regex("DenseIO", var.shape)) ? "DenseIO shapes include local NVMe drives. BM.DenseIO.E5.128 has 8x 6.8TB NVMe drives." : "No local NVMe drives"
     metadata_volume_size_gb  = var.metadata_block_size
     storage_volume_size_gb   = var.storage_block_size
     storage_volumes_per_node = var.storage_block_count

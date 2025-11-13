@@ -65,6 +65,9 @@ locals {
 
   # Check if shape is Flex
   is_flex_shape = can(regex("Flex$", var.shape))
+
+  # Check if shape is DenseIO (has local NVMe drives)
+  is_denseio_shape = can(regex("DenseIO", var.shape))
 }
 
 # Network Security Group for ECGroup instances
@@ -161,8 +164,8 @@ resource "oci_core_instance" "nodes" {
     }
 
     precondition {
-      condition     = var.storage_block_count * var.node_count >= 8
-      error_message = "ECGroup requires at least 8 storage volumes, but only ${var.storage_block_count * var.node_count} were specified."
+      condition     = var.storage_block_count * var.node_count >= 8 || (local.is_denseio_shape && var.storage_block_count == 0)
+      error_message = "ECGroup requires at least 8 storage volumes, but only ${var.storage_block_count * var.node_count} were specified. DenseIO shapes can use storage_block_count=0 to leverage local NVMe drives."
     }
 
     precondition {

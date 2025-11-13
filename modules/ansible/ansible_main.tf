@@ -51,6 +51,12 @@ locals {
 
   ansible_shape_is_available = length(data.oci_core_shapes.ansible_shapes.shapes) > 0
 
+  # Read ansible job files for deployment
+  ansible_job_files = {
+    for file in fileset("${path.module}/ansible_job_files", "*.sh") :
+    file => filebase64("${path.module}/ansible_job_files/${file}")
+  }
+
   processed_user_data = var.user_data != "" ? templatefile(var.user_data, {
     ADMIN_USER_PASSWORD    = var.admin_user_password,
     TARGET_USER            = var.target_user,
@@ -68,7 +74,8 @@ locals {
     ECGROUP_HOSTS          = length(var.ecgroup_nodes) > 0 ? var.ecgroup_nodes[0] : "",
     ECGROUP_NODES          = join(" ", var.ecgroup_nodes),
     ECGROUP_METADATA_ARRAY = var.ecgroup_metadata_array,
-    ECGROUP_STORAGE_ARRAY  = var.ecgroup_storage_array
+    ECGROUP_STORAGE_ARRAY  = var.ecgroup_storage_array,
+    ANSIBLE_JOB_FILES      = local.ansible_job_files
     }) : base64encode(<<-EOF
     #cloud-config
     packages:
