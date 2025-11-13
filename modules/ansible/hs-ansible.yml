@@ -158,12 +158,12 @@
         body: >-
           {{
             {
-              "name": volume_group_name,
+              "name": "{{ volume_group_name }}",
               "_type": "VOLUME_GROUP",
               "expressions": [
                 {
                   "operator": "IN",
-                  "locations": vg_node_locations
+                  "locations": "{{ vg_node_locations }}"
                 }
               ]
             }
