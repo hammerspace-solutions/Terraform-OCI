@@ -176,7 +176,7 @@
       register: volume_group_create_result
       when: vg_node_locations is defined and vg_node_locations | length > 0 and volume_group_name not in vg_names
       until: volume_group_create_result.status == 200
-      retries: 30
+      retries: 5
       delay: 10
       notify: Volume group creation failed
       tags:
