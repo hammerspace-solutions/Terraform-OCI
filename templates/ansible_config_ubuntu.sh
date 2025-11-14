@@ -115,6 +115,10 @@ chown $ANSIBLE_USER:$ANSIBLE_USER ${ANSIBLE_HOME}/ansible.cfg
 
 sudo mkdir -p /usr/local/ansible/jobs /usr/local/lib /var/run/ansible_jobs_status /var/ansible/trigger
 
+# Download ansible scripts from GitHub
+# NOTE: These will be replaced by local versions via null_resource provisioner after instance creation
+# This ensures fresh deployments start with working scripts from GitHub,
+# then get updated with local fixes automatically
 sudo wget -O /usr/local/lib/ansible_functions.sh \
   https://raw.githubusercontent.com/hammerspace-solutions/Terraform-OCI/main/modules/ansible/ansible_job_files/ansible_functions.sh || \
   curl -o /usr/local/lib/ansible_functions.sh \
