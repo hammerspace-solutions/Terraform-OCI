@@ -30,14 +30,14 @@ fi
 
 # 2. Get the username, password, volume group, and share name from the inventroy
 
-hs_username=$(awk '/^\[all:vars\]$/{flag=1; next} /^\[.*\]$/{flag=0} flag && /hs_username = / {sub(/.*= /, ""); print}' "$INVENTORY_FILE")
-hs_password=$(awk '/^\[all:vars\]$/{flag=1; next} /^\[.*\]$/{flag=0} flag && /hs_password = / {sub(/.*= /, ""); print}' "$INVENTORY_FILE")
-volume_group_name=$(awk '/^\[all:vars\]$/{flag=1; next} /^\[.*\]$/{flag=0} flag && /volume_group_name = / {sub(/.*= /, ""); print}' "$INVENTORY_FILE")
-share_name=$(awk '/^\[all:vars\]$/{flag=1; next} /^\[.*\]$/{flag=0} flag && /share_name = / {sub(/.*= /, ""); print}' "$INVENTORY_FILE")
+hs_username=$(awk '/^\[all:vars\]$/{flag=1; next} /^\[.*\]$/{flag=0} flag && /^hs_username = / {sub(/.*= /, ""); print; exit}' "$INVENTORY_FILE")
+hs_password=$(awk '/^\[all:vars\]$/{flag=1; next} /^\[.*\]$/{flag=0} flag && /^hs_password = / {sub(/.*= /, ""); print; exit}' "$INVENTORY_FILE")
+volume_group_name=$(awk '/^\[all:vars\]$/{flag=1; next} /^\[.*\]$/{flag=0} flag && /^volume_group_name = / {sub(/.*= /, ""); print; exit}' "$INVENTORY_FILE")
+share_name=$(awk '/^\[all:vars\]$/{flag=1; next} /^\[.*\]$/{flag=0} flag && /^share_name = / {sub(/.*= /, ""); print; exit}' "$INVENTORY_FILE")
 
 # Debug: Echo parsed vars
 echo "Parsed hs_username: $hs_username"
-echo "Parsed hs_password: $hs_password"
+echo "Parsed hs_password: [REDACTED]"
 echo "Parsed volume_group_name: $volume_group_name"
 echo "Parsed share_name: $share_name"
 
@@ -154,7 +154,7 @@ cat > "$tmp_playbook" <<EOF
 
     - name: Create volumes for addition (filter out existing)
       set_fact:
-        volumes_for_add: >-
+        volumes_for_add_json: |
           [
             {% for item in non_reserved_volumes %}
               {% set full_name = item.node.name ~ ':/' ~ item.exportPath %}
@@ -181,6 +181,10 @@ cat > "$tmp_playbook" <<EOF
               {% endif %}
             {% endfor %}
           ]
+
+    - name: Parse volumes JSON
+      set_fact:
+        volumes_for_add: "{{ volumes_for_add_json | from_json }}"
 
     - name: Check if there are volumes to add
       set_fact:
@@ -249,37 +253,23 @@ cat > "$tmp_playbook" <<EOF
                 {% endfor %}
               ]
 
+        - name: Write volumes to state file
+          lineinfile:
+            path: "$STATE_FILE"
+            line: "{{ item.node.name }}:/{{ item.logicalVolume.name }}"
+            create: yes
+            state: present
+          loop: "{{ volumes_for_add }}"
+
         - name: Output added volumes
           debug:
-            msg: "{{ added_volume_names | to_json }}"
+            msg: "{{ added_volume_names }}"
 
       when: has_volumes_to_add
 EOF
 
   echo "Running Ansible playbook to add storage volumes..."
-  playbook_output=$(ansible-playbook "$tmp_playbook" 2>&1)
-  echo "$playbook_output"
-
-  # Extract added volumes from output (improved parsing to handle full line)
-  
-  added_volumes_json=$(echo "$playbook_output" | awk '/"msg":/ {gsub(/.*"msg": /, ""); gsub(/, *$/, ""); print}' | sed 's/^[ \t]*//;s/[ \t]*$//' || echo "[]")
-
-  if [ "$added_volumes_json" != "[]" ] && [ -n "$added_volumes_json" ]; then
-    # Strip unwanted things from the json string
-      
-    added_volumes_json=${added_volumes_json#\"}
-    added_volumes_json=${added_volumes_json%\"}
-    added_volumes_json=$(echo "$added_volumes_json" | sed 's/\\\"/"/g')
-    added_volumes=$(echo $added_volumes_json | jq -r '.[]' 2>/dev/null)
-
-    if [ -n "$added_volumes" ]; then
-      for volume in $added_volumes; do
-        if ! grep -q -F -x "$volume" "$STATE_FILE"; then
-          echo "$volume" >> "$STATE_FILE"
-        fi
-      done
-    fi
-  fi
+  ansible-playbook "$tmp_playbook"
 
   # Clean up
   rm -f "$tmp_playbook"

@@ -359,3 +359,45 @@ EOF
 
   file_permission = "0644"
 }
+
+# Upload local fixed ansible job scripts to replace GitHub versions
+# This provisioner ensures that local fixes are applied automatically during deployment
+resource "null_resource" "upload_fixed_scripts" {
+  count = var.instance_count
+
+  # Trigger on instance changes or script file changes
+  triggers = {
+    instance_id = oci_core_instance.this[count.index].id
+    scripts_hash = join(",", [
+      for script in ["20-add-storage-nodes.sh", "21-add-volume-groups.sh", "22-add-storage-volumes.sh",
+                     "23-create-shares.sh", "24-add-ecgroup-volume-group.sh", "25-create-ecgroup-share.sh"]
+      : filemd5("${path.module}/ansible_job_files/${script}")
+    ])
+  }
+
+  # Wait for cloud-init to complete before uploading (ensures directories exist)
+  provisioner "local-exec" {
+    command = "sleep 120"  # Wait for cloud-init to finish
+  }
+
+  # Upload all fixed scripts
+  provisioner "local-exec" {
+    command = <<-EOT
+      for script in 20-add-storage-nodes.sh 21-add-volume-groups.sh 22-add-storage-volumes.sh 23-create-shares.sh 24-add-ecgroup-volume-group.sh 25-create-ecgroup-share.sh; do
+        scp -i ${var.common_config.ssh_keys_dir}/ansible_admin_key \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            ${path.module}/ansible_job_files/$script \
+            ubuntu@${oci_core_instance.this[count.index].public_ip}:/tmp/$script
+
+        ssh -i ${var.common_config.ssh_keys_dir}/ansible_admin_key \
+            -o StrictHostKeyChecking=no \
+            -o UserKnownHostsFile=/dev/null \
+            ubuntu@${oci_core_instance.this[count.index].public_ip} \
+            "sudo mv /tmp/$script /usr/local/ansible/jobs/$script && sudo chmod +x /usr/local/ansible/jobs/$script"
+      done
+    EOT
+  }
+
+  depends_on = [oci_core_instance.this]
+}

@@ -30,7 +30,7 @@ if [ ! -f "$INVENTORY_FILE" ]; then
 fi
 
 # 2. Check if ECGroup should be added to Hammerspace
-ecgroup_add_to_hammerspace=$(awk '/^\[all:vars\]$/{flag=1; next} /^\[.*\]$/{flag=0} flag && /ecgroup_add_to_hammerspace = / {sub(/.*= /, ""); print}' "$INVENTORY_FILE")
+ecgroup_add_to_hammerspace=$(awk '/^\[all:vars\]$/{flag=1; next} /^\[.*\]$/{flag=0} flag && /^ecgroup_add_to_hammerspace = / {sub(/.*= /, ""); print; exit}' "$INVENTORY_FILE")
 
 if [ "$ecgroup_add_to_hammerspace" != "true" ]; then
   echo "ECGroup integration with Hammerspace is DISABLED. Skipping volume group creation."
@@ -40,13 +40,13 @@ fi
 echo "ECGroup integration with Hammerspace is ENABLED. Proceeding with volume group management."
 
 # 3. Get the username, password, and ECGroup volume group name from the inventory
-hs_username=$(awk '/^\[all:vars\]$/{flag=1; next} /^\[.*\]$/{flag=0} flag && /hs_username = / {sub(/.*= /, ""); print}' "$INVENTORY_FILE")
-hs_password=$(awk '/^\[all:vars\]$/{flag=1; next} /^\[.*\]$/{flag=0} flag && /hs_password = / {sub(/.*= /, ""); print}' "$INVENTORY_FILE")
-ecgroup_volume_group_name=$(awk '/^\[all:vars\]$/{flag=1; next} /^\[.*\]$/{flag=0} flag && /ecgroup_volume_group_name = / {sub(/.*= /, ""); print}' "$INVENTORY_FILE")
+hs_username=$(awk '/^\[all:vars\]$/{flag=1; next} /^\[.*\]$/{flag=0} flag && /^hs_username = / {sub(/.*= /, ""); print; exit}' "$INVENTORY_FILE")
+hs_password=$(awk '/^\[all:vars\]$/{flag=1; next} /^\[.*\]$/{flag=0} flag && /^hs_password = / {sub(/.*= /, ""); print; exit}' "$INVENTORY_FILE")
+ecgroup_volume_group_name=$(awk '/^\[all:vars\]$/{flag=1; next} /^\[.*\]$/{flag=0} flag && /^ecgroup_volume_group_name = / {sub(/.*= /, ""); print; exit}' "$INVENTORY_FILE")
 
 # Debug: Echo parsed vars
 echo "Parsed hs_username: $hs_username"
-echo "Parsed hs_password: $hs_password"
+echo "Parsed hs_password: [REDACTED]"
 echo "Parsed ecgroup_volume_group_name: $ecgroup_volume_group_name"
 
 # Check if ECGroup VG name is provided
