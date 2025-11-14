@@ -65,7 +65,9 @@ done < "$INVENTORY_FILE"
 
 all_storage_servers=""
 storage_map=() # Array of "IP:name"
-flag="0"  # Initialize flag for storage_servers parsing
+
+# Parse storage_servers section
+flag="0"
 while read -r line; do
   if [[ "$line" =~ ^\[storage_servers\]$ ]]; then
     flag="1"
@@ -74,8 +76,22 @@ while read -r line; do
   fi
   if [ "$flag" = "1" ] && [[ "$line" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+ ]]; then
     ip=$(echo "$line" | awk '{print $1}')
-    # Note: This assumes inventory lines have node_name="..." format
-    # If not, you'll need to adjust how you get the node name
+    name=$(echo "$line" | grep -oP 'node_name="\K[^"]+' || echo "${ip//./-}")
+    all_storage_servers+="$ip"$'\n'
+    storage_map+=("$ip:$name")
+  fi
+done < "$INVENTORY_FILE"
+
+# Also parse ecgroup_nodes section to add to Hammerspace
+flag="0"
+while read -r line; do
+  if [[ "$line" =~ ^\[ecgroup_nodes\]$ ]]; then
+    flag="1"
+  elif [[ "$line" =~ ^\[ && ! "$line" =~ ^\[ecgroup_nodes\]$ ]]; then
+    flag="0"
+  fi
+  if [ "$flag" = "1" ] && [[ "$line" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+    ip=$(echo "$line" | awk '{print $1}')
     name=$(echo "$line" | grep -oP 'node_name="\K[^"]+' || echo "${ip//./-}")
     all_storage_servers+="$ip"$'\n'
     storage_map+=("$ip:$name")
