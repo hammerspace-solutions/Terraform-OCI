@@ -34,12 +34,14 @@ hs_username=$(awk '/^\[all:vars\]$/{flag=1; next} /^\[.*\]$/{flag=0} flag && /hs
 hs_password=$(awk '/^\[all:vars\]$/{flag=1; next} /^\[.*\]$/{flag=0} flag && /hs_password = / {sub(/.*= /, ""); print}' "$INVENTORY_FILE")
 volume_group_name=$(awk '/^\[all:vars\]$/{flag=1; next} /^\[.*\]$/{flag=0} flag && /volume_group_name = / {sub(/.*= /, ""); print}' "$INVENTORY_FILE")
 share_name=$(awk '/^\[all:vars\]$/{flag=1; next} /^\[.*\]$/{flag=0} flag && /share_name = / {sub(/.*= /, ""); print}' "$INVENTORY_FILE")
+ecgroup_add_to_hammerspace=$(awk '/^\[all:vars\]$/{flag=1; next} /^\[.*\]$/{flag=0} flag && /ecgroup_add_to_hammerspace = / {sub(/.*= /, ""); print}' "$INVENTORY_FILE")
 
 # Debug: Echo parsed vars
 echo "Parsed hs_username: $hs_username"
 echo "Parsed hs_password: $hs_password"
 echo "Parsed volume_group_name: $volume_group_name"
 echo "Parsed share_name: $share_name"
+echo "Parsed ecgroup_add_to_hammerspace: $ecgroup_add_to_hammerspace"
 
 # Set variables for later use
 
@@ -47,6 +49,7 @@ HS_USERNAME=$hs_username
 HS_PASSWORD=$hs_password
 HS_VOLUME_GROUP=$volume_group_name
 HS_SHARE=$share_name
+ECGROUP_ADD_TO_HS=$ecgroup_add_to_hammerspace
 
 # 3. Parse hammerspace and storage_servers with names (assuming inventory has IP node_name="name")
 
@@ -82,21 +85,30 @@ while read -r line; do
   fi
 done < "$INVENTORY_FILE"
 
-# Also parse ecgroup_nodes section to add to Hammerspace
-flag="0"
-while read -r line; do
-  if [[ "$line" =~ ^\[ecgroup_nodes\]$ ]]; then
-    flag="1"
-  elif [[ "$line" =~ ^\[ && ! "$line" =~ ^\[ecgroup_nodes\]$ ]]; then
-    flag="0"
-  fi
-  if [ "$flag" = "1" ] && [[ "$line" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+ ]]; then
-    ip=$(echo "$line" | awk '{print $1}')
-    name=$(echo "$line" | grep -oP 'node_name="\K[^"]+' || echo "${ip//./-}")
-    all_storage_servers+="$ip"$'\n'
-    storage_map+=("$ip:$name")
-  fi
-done < "$INVENTORY_FILE"
+# Parse ecgroup_nodes section - add only FIRST node as ECGroup representative (if enabled)
+if [ "$ECGROUP_ADD_TO_HS" = "true" ]; then
+  echo "ECGroup integration with Hammerspace is ENABLED"
+  flag="0"
+  ecgroup_added=false
+  while read -r line; do
+    if [[ "$line" =~ ^\[ecgroup_nodes\]$ ]]; then
+      flag="1"
+    elif [[ "$line" =~ ^\[ && ! "$line" =~ ^\[ecgroup_nodes\]$ ]]; then
+      flag="0"
+    fi
+    if [ "$flag" = "1" ] && [[ "$line" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+ ]] && [ "$ecgroup_added" = false ]; then
+      ip=$(echo "$line" | awk '{print $1}')
+      # Use "ecgroup-cluster" as the name for the representative node
+      name="ecgroup-cluster"
+      all_storage_servers+="$ip"$'\n'
+      storage_map+=("$ip:$name")
+      ecgroup_added=true  # Only add the first ECGroup node
+      echo "Adding ECGroup representative node: $name ($ip)"
+    fi
+  done < "$INVENTORY_FILE"
+else
+  echo "ECGroup integration with Hammerspace is DISABLED - ECGroup will operate independently"
+fi
 
 all_hammerspace=$(echo "$all_hammerspace" | grep -v '^$' | sort -u || true)
 all_storage_servers=$(echo "$all_storage_servers" | grep -v '^$' | sort -u || true)

@@ -111,8 +111,34 @@ cat > "$tmp_playbook" <<EOF
     data_cluster_mgmt_ip: "$data_cluster_mgmt_ip"
     volume_group_name: "$HS_VOLUME_GROUP"
     vg_node_locations: $vg_node_locations
+    ecgroup_node_name: "$ecgroup_node_name"
 
   tasks:
+    - name: Wait for ECGroup node to be available
+      uri:
+        url: "https://{{ data_cluster_mgmt_ip }}:8443/mgmt/v1.2/rest/nodes"
+        method: GET
+        user: "{{ hs_username }}"
+        password: "{{ hs_password }}"
+        force_basic_auth: true
+        validate_certs: false
+        return_content: true
+        status_code: 200
+        body_format: json
+        timeout: 30
+      register: nodes_check
+      until: >-
+        (
+          nodes_check.json
+          | selectattr('name', 'equalto', ecgroup_node_name)
+          | selectattr('nodeType', 'equalto', 'OTHER')
+          | selectattr('nodeState', 'equalto', 'MANAGED')
+          | list
+          | length
+        ) > 0
+      retries: 60
+      delay: 10
+
     - name: Get all volume groups
       uri:
         url: "https://{{ data_cluster_mgmt_ip }}:8443/mgmt/v1.2/rest/volume-groups"

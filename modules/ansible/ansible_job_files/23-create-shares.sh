@@ -1,9 +1,8 @@
 #!/bin/bash
 #
-# Ansible Job: Create ECGroup Share
+# Ansible Job: Create Share
 #
-# This script creates the ECGroup share if not existing.
-# It only runs if ecgroup_add_to_hammerspace is true.
+# This script creates the share if not existing.
 # It is idempotent.
 
 set -euo pipefail
@@ -11,7 +10,7 @@ set -euo pipefail
 # --- Configuration ---
 ANSIBLE_LIB_PATH="/usr/local/lib/ansible_functions.sh"
 INVENTORY_FILE="/var/ansible/trigger/inventory.ini"
-STATE_FILE="/var/run/ansible_jobs_status/created_ecgroup_shares.txt"
+STATE_FILE="/var/run/ansible_jobs_status/created_shares.txt"
 
 # --- Source the function library ---
 if [ ! -f "$ANSIBLE_LIB_PATH" ]; then
@@ -21,7 +20,7 @@ fi
 source "$ANSIBLE_LIB_PATH"
 
 # --- Main Logic ---
-echo "--- Starting Create ECGroup Share(s) Job ---"
+echo "--- Starting Create Share(s) Job ---"
 
 # 1. Verify inventory file exists
 if [ ! -f "$INVENTORY_FILE" ]; then
@@ -29,39 +28,25 @@ if [ ! -f "$INVENTORY_FILE" ]; then
   exit 1
 fi
 
-# 2. Check if ECGroup should be added to Hammerspace
-ecgroup_add_to_hammerspace=$(awk '/^\[all:vars\]$/{flag=1; next} /^\[.*\]$/{flag=0} flag && /ecgroup_add_to_hammerspace = / {sub(/.*= /, ""); print}' "$INVENTORY_FILE")
+# 2. Get the username, password, volume group, and share name from the inventroy
 
-if [ "$ecgroup_add_to_hammerspace" != "true" ]; then
-  echo "ECGroup integration with Hammerspace is DISABLED. Skipping share creation."
-  exit 0
-fi
-
-echo "ECGroup integration with Hammerspace is ENABLED. Proceeding with share creation."
-
-# 3. Get the username, password, volume group, and share name from the inventory
 hs_username=$(awk '/^\[all:vars\]$/{flag=1; next} /^\[.*\]$/{flag=0} flag && /hs_username = / {sub(/.*= /, ""); print}' "$INVENTORY_FILE")
 hs_password=$(awk '/^\[all:vars\]$/{flag=1; next} /^\[.*\]$/{flag=0} flag && /hs_password = / {sub(/.*= /, ""); print}' "$INVENTORY_FILE")
-ecgroup_volume_group_name=$(awk '/^\[all:vars\]$/{flag=1; next} /^\[.*\]$/{flag=0} flag && /ecgroup_volume_group_name = / {sub(/.*= /, ""); print}' "$INVENTORY_FILE")
-ecgroup_share_name=$(awk '/^\[all:vars\]$/{flag=1; next} /^\[.*\]$/{flag=0} flag && /ecgroup_share_name = / {sub(/.*= /, ""); print}' "$INVENTORY_FILE")
+volume_group_name=$(awk '/^\[all:vars\]$/{flag=1; next} /^\[.*\]$/{flag=0} flag && /volume_group_name = / {sub(/.*= /, ""); print}' "$INVENTORY_FILE")
+share_name=$(awk '/^\[all:vars\]$/{flag=1; next} /^\[.*\]$/{flag=0} flag && /share_name = / {sub(/.*= /, ""); print}' "$INVENTORY_FILE")
 
 # Debug: Echo parsed vars
 echo "Parsed hs_username: $hs_username"
 echo "Parsed hs_password: $hs_password"
-echo "Parsed ecgroup_volume_group_name: $ecgroup_volume_group_name"
-echo "Parsed ecgroup_share_name: $ecgroup_share_name"
-
-# Check if ECGroup share name is provided
-if [ -z "$ecgroup_share_name" ]; then
-  echo "No ECGroup share name specified. Skipping."
-  exit 0
-fi
+echo "Parsed volume_group_name: $volume_group_name"
+echo "Parsed share_name: $share_name"
 
 # Set variables for later use
+
 HS_USERNAME=$hs_username
 HS_PASSWORD=$hs_password
-HS_VOLUME_GROUP=$ecgroup_volume_group_name
-HS_SHARE_NAME=$ecgroup_share_name
+HS_VOLUME_GROUP=$volume_group_name
+HS_SHARE_NAME=$share_name
 
 SHARE_BODY='{'
 SHARE_BODY+='"name": "'$HS_SHARE_NAME'",'
@@ -77,13 +62,14 @@ SHARE_BODY+='{"objective": {"name": "confine-to-'$HS_VOLUME_GROUP'"}, "applicabi
 SHARE_BODY+='"smbBrowsable": "true", "shareSizeLimit": "0"'
 SHARE_BODY+='}'
 
-# 4. Parse hammerspace
+# 3. Parse hammerspace and storage_servers with names (assuming inventory has IP node_name="name")
+
 all_hammerspace=""
-flag="0"
+flag="0"  # Initialize flag for hammerspace parsing
 while read -r line; do
-  if [[ "$line" =~ ^\[hammerspace\]$ ]]; then
+  if [[ "$line" =~ ^\[hammerspace\]$ ]]; then 
     flag="hammerspace"
-  elif [[ "$line" =~ ^\[ && ! "$line" =~ ^\[hammerspace\]$ ]]; then
+  elif [[ "$line" =~ ^\[ && ! "$line" =~ ^\[hammerspace\]$ ]]; then 
     flag="0"
   fi
   if [ "$flag" = "hammerspace" ] && [[ "$line" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+ ]]; then
@@ -91,29 +77,49 @@ while read -r line; do
   fi
 done < "$INVENTORY_FILE"
 
-all_hammerspace=$(echo "$all_hammerspace" | grep -v '^$' | sort -u || true)
+all_storage_servers=""
+storage_map=() # Array of "IP:name"
+flag="0"  # Initialize flag for storage_servers parsing
+while read -r line; do
+  if [[ "$line" =~ ^\[storage_servers\]$ ]]; then 
+    flag="1"
+  elif [[ "$line" =~ ^\[ && ! "$line" =~ ^\[storage_servers\]$ ]]; then 
+    flag="0"
+  fi
+  if [ "$flag" = "1" ] && [[ "$line" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+    ip=$(echo "$line" | awk '{print $1}')
+    # Note: This assumes inventory lines have node_name="..." format
+    # If not, you'll need to adjust how you get the node name
+    name=$(echo "$line" | grep -oP 'node_name="\K[^"]+' || echo "${ip//./-}")
+    all_storage_servers+="$ip"$'\n'
+    storage_map+=("$ip:$name")
+  fi
+done < "$INVENTORY_FILE"
 
-if [ -z "$all_hammerspace" ]; then
-  echo "No hammerspace found in inventory. Exiting."
+all_hammerspace=$(echo "$all_hammerspace" | grep -v '^$' | sort -u || true)
+all_storage_servers=$(echo "$all_storage_servers" | grep -v '^$' | sort -u || true)
+
+# Debug: Log parsed IPs
+
+echo "Parsed hammerspace: $all_hammerspace"
+echo "Parsed storage_servers: $all_storage_servers"
+
+if [ -z "$all_storage_servers" ] || [ -z "$all_hammerspace" ]; then
+  echo "No storage_servers or hammerspace found in inventory. Exiting."
   exit 0
 fi
 
 data_cluster_mgmt_ip=$(echo "$all_hammerspace" | head -1)
 
-# Check if share already exists in state
-mkdir -p "$(dirname "$STATE_FILE")"
-touch "$STATE_FILE"
-
-if grep -qF "$HS_SHARE_NAME" "$STATE_FILE"; then
-  echo "ECGroup share '$HS_SHARE_NAME' already created. Exiting."
+if grep -q -F -x "$HS_SHARE_NAME" "$STATE_FILE"; then
+  echo "Share $HS_SHARE_NAME already created. Exiting."
   exit 0
 fi
 
-echo "Creating ECGroup share: $HS_SHARE_NAME"
-
-# Create playbook
+# Playbook for create share
 tmp_playbook=$(mktemp)
 cat > "$tmp_playbook" <<EOF
+---
 - hosts: localhost
   gather_facts: false
   vars:
@@ -121,34 +127,9 @@ cat > "$tmp_playbook" <<EOF
     hs_password: "$HS_PASSWORD"
     data_cluster_mgmt_ip: "$data_cluster_mgmt_ip"
     share_name: "$HS_SHARE_NAME"
-    share_body: $SHARE_BODY
-    volume_group_name: "$HS_VOLUME_GROUP"
+    share: $SHARE_BODY
 
   tasks:
-    - name: Wait for volume group to be available (if specified)
-      uri:
-        url: "https://{{ data_cluster_mgmt_ip }}:8443/mgmt/v1.2/rest/volume-groups"
-        method: GET
-        user: "{{ hs_username }}"
-        password: "{{ hs_password }}"
-        force_basic_auth: true
-        validate_certs: false
-        return_content: true
-        status_code: 200
-        body_format: json
-        timeout: 30
-      register: vg_check
-      until: >-
-        (
-          vg_check.json
-          | selectattr('name', 'equalto', volume_group_name)
-          | list
-          | length
-        ) > 0
-      retries: 60
-      delay: 10
-      when: volume_group_name != ""
-
     - name: Get all shares
       uri:
         url: "https://{{ data_cluster_mgmt_ip }}:8443/mgmt/v1.2/rest/shares"
@@ -166,7 +147,7 @@ cat > "$tmp_playbook" <<EOF
       retries: 30
       delay: 10
 
-    - name: Check if share exists
+    - name: Set fact for share exists
       set_fact:
         share_exists: "{{ share_name in (shares_response.json | map(attribute='name') | list) }}"
 
@@ -174,32 +155,46 @@ cat > "$tmp_playbook" <<EOF
       uri:
         url: "https://{{ data_cluster_mgmt_ip }}:8443/mgmt/v1.2/rest/shares"
         method: POST
-        body: "{{ share_body }}"
+        body: '{{ share }}'
         user: "{{ hs_username }}"
         password: "{{ hs_password }}"
         force_basic_auth: true
-        status_code: 200
+        status_code: 202
         body_format: json
         validate_certs: false
         timeout: 30
-      when: not share_exists
       register: share_create
-      until: share_create.status == 200
+      until: share_create.status == 202
       retries: 30
       delay: 10
+      when: not share_exists
 
-    - name: Display result
-      debug:
-        msg: "ECGroup share '{{ share_name }}' {{ 'already exists' if share_exists else 'created successfully' }}"
+    - name: Wait for completion
+      uri:
+        url: "{{ share_create.location }}"
+        method: GET
+        user: "{{ hs_username }}"
+        password: "{{ hs_password }}"
+        force_basic_auth: true
+        validate_certs: false
+        status_code: 200
+        body_format: json
+        timeout: 30
+      register: _result
+      until: _result.json.status == "COMPLETED"
+      retries: 30
+      delay: 10
+      when: share_create.status == 202
 EOF
 
-echo "Running Ansible playbook to create ECGroup share..."
-ansible-playbook "$tmp_playbook"
+  echo "Running Ansible playbook to create share..."
+  ansible-playbook "$tmp_playbook"
 
-# Update state
-echo "$HS_SHARE_NAME" >> "$STATE_FILE"
+  # Update state
+  echo "$HS_SHARE_NAME" >> "$STATE_FILE"
 
-# Clean up
-rm -f "$tmp_playbook"
+  # Clean up
+  rm -f "$tmp_playbook"
 
-echo "--- Create ECGroup Share Job Complete ---"
+  echo "--- Create Share Job Complete ---"
+  
