@@ -1,0 +1,76 @@
+---
+- name: Configure Hammerspace Environment
+  hosts: all_nodes
+  become: yes
+  gather_facts: yes
+  
+  vars:
+    hammerspace_mgmt_ip: "10.0.1.247"
+    volume_group_name: "vg-auto"
+    share_name: "test"
+  
+  tasks:
+    - name: Update system packages
+      package:
+        name: "*"
+        state: latest
+      when: ansible_os_family == "RedHat" or ansible_os_family == "Debian"
+    
+    - name: Install required packages
+      package:
+        name:
+          - nfs-utils
+          - curl
+          - wget
+        state: present
+      when: ansible_os_family == "RedHat"
+    
+    - name: Install required packages (Debian/Ubuntu)
+      package:
+        name:
+          - nfs-common
+          - curl
+          - wget
+        state: present
+      when: ansible_os_family == "Debian"
+    
+    - name: Create mount point for Hammerspace
+      file:
+        path: /mnt/hammerspace
+        state: directory
+        mode: '0755'
+      when: hammerspace_mgmt_ip != ""
+    
+    - name: Mount Hammerspace share
+      mount:
+        path: /mnt/hammerspace
+        src: "{{ hammerspace_mgmt_ip }}:/{{ share_name | default('global') }}"
+        fstype: nfs
+        opts: "rw,sync,hard,intr"
+        state: mounted
+      when: hammerspace_mgmt_ip != "" and share_name != ""
+      ignore_errors: yes
+
+- name: Configure Storage Nodes
+  hosts: hammerspace_storage
+  become: yes
+  tasks:
+    - name: Configure storage-specific settings
+      debug:
+        msg: "Configuring storage node {{ inventory_hostname }}"
+
+- name: Configure Client Nodes  
+  hosts: client_nodes
+  become: yes
+  tasks:
+    - name: Configure client-specific settings
+      debug:
+        msg: "Configuring client node {{ inventory_hostname }}"
+
+- name: Configure ECGroup Nodes
+  hosts: ecgroup_nodes
+  become: yes
+  tasks:
+    - name: Configure ECGroup-specific settings
+      debug:
+        msg: "Configuring ECGroup node {{ inventory_hostname }}"
