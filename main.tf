@@ -562,10 +562,13 @@ module "ansible" {
   boot_volume_size        = var.ansible_boot_volume_size
   boot_volume_type        = var.ansible_boot_volume_type
   user_data               = var.ansible_user_data
-  target_user             = var.ansible_target_user
-  volume_group_name       = var.volume_group_name
-  share_name              = var.share_name
-  capacity_reservation_id = null # Disabled capacity reservations
+  target_user                = var.ansible_target_user
+  volume_group_name          = var.volume_group_name
+  share_name                 = var.share_name
+  ecgroup_add_to_hammerspace = var.ecgroup_add_to_hammerspace
+  ecgroup_volume_group_name  = var.ecgroup_volume_group_name
+  ecgroup_share_name         = var.ecgroup_share_name
+  capacity_reservation_id    = null # Disabled capacity reservations
 
   depends_on = [
     module.clients,
