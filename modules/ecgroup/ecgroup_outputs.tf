@@ -74,12 +74,12 @@ output "storage_volume_ids" {
 
 output "metadata_array" {
   description = "ECGroup metadata array description"
-  value       = "HDD_${var.metadata_block_size}GB"
+  value       = "HDD_${var.metadata_block_size}G"
 }
 
 output "storage_array" {
   description = "ECGroup storage array description"
-  value       = var.storage_block_count > 0 ? "HDD_${var.storage_block_size}GB" : "LOCAL_NVME_DENSEIO"
+  value       = var.storage_block_count > 0 ? "HDD_${var.storage_block_size}G" : "LOCAL_NVME_DENSEIO"
 }
 
 # Detailed volume information
