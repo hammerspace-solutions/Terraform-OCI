@@ -121,7 +121,7 @@ sudo wget -O /usr/local/lib/ansible_functions.sh \
   https://raw.githubusercontent.com/hammerspace-solutions/Terraform-AWS/main/modules/ansible/ansible_job_files/ansible_functions.sh
 sudo chmod +x /usr/local/lib/ansible_functions.sh
 
-for script in 20-add-storage-nodes.sh 21-add-volume-groups.sh 30-configure-ecgroup.sh; do
+for script in 20-add-storage-nodes.sh 21-add-volume-groups.sh 22-add-storage-volumes.sh 23-create-shares.sh 24-add-ecgroup-volume-group.sh 25-create-ecgroup-share.sh 30-configure-ecgroup.sh; do
   sudo wget -O /usr/local/ansible/jobs/$script \
     https://raw.githubusercontent.com/hammerspace-solutions/Terraform-OCI/main/modules/ansible/ansible_job_files/$script || \
     curl -o /usr/local/ansible/jobs/$script \
@@ -143,6 +143,9 @@ hs_username = admin
 hs_password = ${ADMIN_USER_PASSWORD}
 volume_group_name = ${VG_NAME}
 share_name = ${SHARE_NAME}
+ecgroup_add_to_hammerspace = ${ECGROUP_ADD_TO_HAMMERSPACE}
+ecgroup_volume_group_name = ${ECGROUP_VG_NAME}
+ecgroup_share_name = ${ECGROUP_SHARE_NAME}
 ecgroup_metadata_array = ${ECGROUP_METADATA_ARRAY}
 ecgroup_storage_array = ${ECGROUP_STORAGE_ARRAY}
 
@@ -319,6 +322,10 @@ sudo -u $ANSIBLE_USER bash -c "timeout 300 ssh-keyscan -H -f ${ANSIBLE_HOME}/inv
 if [ -n "${MGMT_IP}" ]; then
     sudo /usr/local/ansible/jobs/20-add-storage-nodes.sh || true
     sudo /usr/local/ansible/jobs/21-add-volume-groups.sh || true
+    sudo /usr/local/ansible/jobs/22-add-storage-volumes.sh || true
+    sudo /usr/local/ansible/jobs/23-create-shares.sh || true
+    sudo /usr/local/ansible/jobs/24-add-ecgroup-volume-group.sh || true
+    sudo /usr/local/ansible/jobs/25-create-ecgroup-share.sh || true
 fi
 
 if [ -n "${ECGROUP_INSTANCES}" ]; then
