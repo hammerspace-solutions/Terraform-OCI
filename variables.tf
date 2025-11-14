@@ -698,13 +698,31 @@ variable "ansible_target_user" {
 }
 
 variable "volume_group_name" {
-  description = "Volume group name for Ansible to feed Anvil"
+  description = "Volume group name for storage servers"
   type        = string
   default     = "vg-auto"
 }
 
 variable "share_name" {
-  description = "Share name for Ansible to feed Anvil"
+  description = "Share name for storage servers"
+  type        = string
+  default     = ""
+}
+
+variable "ecgroup_add_to_hammerspace" {
+  description = "Whether to add ECGroup to Hammerspace as a storage node"
+  type        = bool
+  default     = false
+}
+
+variable "ecgroup_volume_group_name" {
+  description = "Volume group name for ECGroup (only used if ecgroup_add_to_hammerspace is true)"
+  type        = string
+  default     = ""
+}
+
+variable "ecgroup_share_name" {
+  description = "Share name for ECGroup (only used if ecgroup_add_to_hammerspace is true)"
   type        = string
   default     = ""
 }
