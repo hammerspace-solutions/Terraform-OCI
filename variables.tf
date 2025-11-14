@@ -727,6 +727,18 @@ variable "ecgroup_share_name" {
   default     = ""
 }
 
+variable "add_storage_server_volumes" {
+  description = "Whether to add storage server volumes to Hammerspace"
+  type        = bool
+  default     = true
+}
+
+variable "add_ecgroup_volumes" {
+  description = "Whether to add ECGroup volumes to Hammerspace (only applies if ecgroup_add_to_hammerspace is true)"
+  type        = bool
+  default     = true
+}
+
 
 variable "api_key" {
   description = "OCI generated API key"

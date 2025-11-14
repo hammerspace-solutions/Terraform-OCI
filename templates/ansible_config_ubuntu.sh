@@ -125,7 +125,7 @@ sudo wget -O /usr/local/lib/ansible_functions.sh \
   https://raw.githubusercontent.com/hammerspace-solutions/Terraform-AWS/main/modules/ansible/ansible_job_files/ansible_functions.sh
 sudo chmod +x /usr/local/lib/ansible_functions.sh
 
-for script in 20-add-storage-nodes.sh 21-add-volume-groups.sh 22-add-storage-volumes.sh 23-create-shares.sh 24-add-ecgroup-volume-group.sh 25-create-ecgroup-share.sh 30-configure-ecgroup.sh; do
+for script in 20-configure-ecgroup.sh 30-add-storage-nodes.sh 32-add-storage-volumes.sh 33-add-storage-volume-group.sh 34-create-storage-share.sh 35-add-ecgroup-volumes.sh 36-add-ecgroup-volume-group.sh 37-create-ecgroup-share.sh; do
   sudo wget -O /usr/local/ansible/jobs/$script \
     https://raw.githubusercontent.com/hammerspace-solutions/Terraform-OCI/main/modules/ansible/ansible_job_files/$script || \
     curl -o /usr/local/ansible/jobs/$script \
@@ -150,6 +150,8 @@ share_name = ${SHARE_NAME}
 ecgroup_add_to_hammerspace = ${ECGROUP_ADD_TO_HAMMERSPACE}
 ecgroup_volume_group_name = ${ECGROUP_VG_NAME}
 ecgroup_share_name = ${ECGROUP_SHARE_NAME}
+add_storage_server_volumes = ${ADD_STORAGE_SERVER_VOLUMES}
+add_ecgroup_volumes = ${ADD_ECGROUP_VOLUMES}
 ecgroup_metadata_array = ${ECGROUP_METADATA_ARRAY}
 ecgroup_storage_array = ${ECGROUP_STORAGE_ARRAY}
 
@@ -323,17 +325,19 @@ chown $ANSIBLE_USER:$ANSIBLE_USER "$PLAYBOOK_FILE"
 
 sudo -u $ANSIBLE_USER bash -c "timeout 300 ssh-keyscan -H -f ${ANSIBLE_HOME}/inventory.ini >> ${ANSIBLE_HOME}/.ssh/known_hosts 2>/dev/null || true"
 
-if [ -n "${MGMT_IP}" ]; then
-    sudo /usr/local/ansible/jobs/20-add-storage-nodes.sh || true
-    sudo /usr/local/ansible/jobs/21-add-volume-groups.sh || true
-    sudo /usr/local/ansible/jobs/22-add-storage-volumes.sh || true
-    sudo /usr/local/ansible/jobs/23-create-shares.sh || true
-    sudo /usr/local/ansible/jobs/24-add-ecgroup-volume-group.sh || true
-    sudo /usr/local/ansible/jobs/25-create-ecgroup-share.sh || true
+if [ -n "${ECGROUP_INSTANCES}" ]; then
+    sudo /usr/local/ansible/jobs/20-configure-ecgroup.sh || true
 fi
 
-if [ -n "${ECGROUP_INSTANCES}" ]; then
-    sudo /usr/local/ansible/jobs/30-configure-ecgroup.sh || true
+if [ -n "${MGMT_IP}" ]; then
+    sudo /usr/local/ansible/jobs/30-add-storage-nodes.sh || true
+    sudo /usr/local/ansible/jobs/32-add-storage-volumes.sh || true
+    sudo /usr/local/ansible/jobs/33-add-storage-volume-group.sh || true
+    sudo /usr/local/ansible/jobs/34-create-storage-share.sh || true
+    sudo /usr/local/ansible/jobs/35-add-ecgroup-volumes.sh || true
+    sudo /usr/local/ansible/jobs/36-add-ecgroup-volume-group.sh || true
+    sudo /usr/local/ansible/jobs/37-create-ecgroup-share.sh || true
+fi
 fi
 
 sudo -u $ANSIBLE_USER bash -c "ansible-playbook -i ${ANSIBLE_HOME}/inventory.ini ${ANSIBLE_HOME}/distribute_keys.yml"

@@ -100,6 +100,10 @@ storage_block_volume_throughput = null
 storage_block_volume_iops       = null
 storage_user_data               = "./templates/storage_server.sh"
 storage_target_user             = "ubuntu"
+add_storage_server_volumes = true
+volume_group_name        = "vg-auto"
+share_name               = "test"
+
 
 hammerspace_image_id = "ocid1.image.oc1.us-sanjose-1.aaaaaaaa3pbtf4hgs3cjvg4nrkwxuyxupsq5cwz3j5u7y66rlllx4wjmqxha" # Oracle Linux 8
 
@@ -145,6 +149,7 @@ ecgroup_user_data                  = "./templates/ecgroup_node.sh"
 ecgroup_add_to_hammerspace = true 
 ecgroup_volume_group_name  = "ecg-vg-auto"
 ecgroup_share_name         = "ecg-share"
+  add_ecgroup_volumes = true
 # ecgroup_node_count                 = 4
 # ecgroup_image_id                = "ocid1.image.oc1.us-sanjose-1.aaaaaaaa27y5htjsk4cxjbuvsuimvqh6pslo2gqboymy5xrb3wnxtatvwaiq"  # "ocid1.image.oc1.us-sanjose-1.aaaaaaaapah7sttqniy7ppbladubs7g6cecnf2m3abkq2av777qvivlqhd2a" # Rocky 9.6
 # # VM.DenseIO.E4.Flex configuration - Flexible VM with local NVMe drives
@@ -179,8 +184,7 @@ ansible_boot_volume_size = 200
 ansible_boot_volume_type = "paravirtualized"
 ansible_user_data        = "./templates/ansible_config_ubuntu.sh"
 ansible_target_user      = "ubuntu"
-volume_group_name        = "vg-auto"
-share_name               = "test"
+
 
 # Bastion specific variables (bastion_ prefix)
 #

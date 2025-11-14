@@ -568,6 +568,8 @@ module "ansible" {
   ecgroup_add_to_hammerspace = var.ecgroup_add_to_hammerspace
   ecgroup_volume_group_name  = var.ecgroup_volume_group_name
   ecgroup_share_name         = var.ecgroup_share_name
+  add_storage_server_volumes = var.add_storage_server_volumes
+  add_ecgroup_volumes        = var.add_ecgroup_volumes
   capacity_reservation_id    = null # Disabled capacity reservations
 
   depends_on = [
