@@ -67,6 +67,8 @@ locals {
     ECGROUP_ADD_TO_HAMMERSPACE  = var.ecgroup_add_to_hammerspace,
     ECGROUP_VG_NAME             = var.ecgroup_volume_group_name,
     ECGROUP_SHARE_NAME          = var.ecgroup_share_name,
+    ADD_STORAGE_SERVER_VOLUMES  = var.add_storage_server_volumes,
+    ADD_ECGROUP_VOLUMES         = var.add_ecgroup_volumes,
     ECGROUP_INSTANCES           = join(" ", var.ecgroup_instances),
     ECGROUP_HOSTS               = length(var.ecgroup_nodes) > 0 ? var.ecgroup_nodes[0] : "",
     ECGROUP_NODES               = join(" ", var.ecgroup_nodes),
@@ -369,21 +371,35 @@ resource "null_resource" "upload_fixed_scripts" {
   triggers = {
     instance_id = oci_core_instance.this[count.index].id
     scripts_hash = join(",", [
-      for script in ["20-add-storage-nodes.sh", "21-add-volume-groups.sh", "22-add-storage-volumes.sh",
-                     "23-create-shares.sh", "24-add-ecgroup-volume-group.sh", "25-create-ecgroup-share.sh"]
+      for script in ["20-configure-ecgroup.sh", "30-add-storage-nodes.sh", "32-add-storage-volumes.sh",
+                     "33-add-storage-volume-group.sh", "34-create-storage-share.sh", "35-add-ecgroup-volumes.sh",
+                     "36-add-ecgroup-volume-group.sh", "37-create-ecgroup-share.sh"]
       : filemd5("${path.module}/ansible_job_files/${script}")
     ])
   }
 
-  # Wait for cloud-init to complete before uploading (ensures directories exist)
-  provisioner "local-exec" {
-    command = "sleep 120"  # Wait for cloud-init to finish
-  }
-
-  # Upload all fixed scripts
+  # Upload all fixed scripts - wait for cloud-init to complete first
   provisioner "local-exec" {
     command = <<-EOT
-      for script in 20-add-storage-nodes.sh 21-add-volume-groups.sh 22-add-storage-volumes.sh 23-create-shares.sh 24-add-ecgroup-volume-group.sh 25-create-ecgroup-share.sh; do
+      # Wait for cloud-init to complete (check for cloud-init status)
+      echo "Waiting for cloud-init to complete on ${oci_core_instance.this[count.index].public_ip}..."
+      for i in {1..60}; do
+        if ssh -i ${var.common_config.ssh_keys_dir}/ansible_admin_key \
+               -o StrictHostKeyChecking=no \
+               -o UserKnownHostsFile=/dev/null \
+               -o ConnectTimeout=10 \
+               ubuntu@${oci_core_instance.this[count.index].public_ip} \
+               "[ -d /usr/local/ansible/jobs ]" 2>/dev/null; then
+          echo "Cloud-init completed, directory exists"
+          break
+        fi
+        echo "Waiting... attempt $i/60"
+        sleep 10
+      done
+
+      # Upload all fixed scripts
+      for script in 20-configure-ecgroup.sh 30-add-storage-nodes.sh 32-add-storage-volumes.sh 33-add-storage-volume-group.sh 34-create-storage-share.sh 35-add-ecgroup-volumes.sh 36-add-ecgroup-volume-group.sh 37-create-ecgroup-share.sh; do
+        echo "Uploading $script..."
         scp -i ${var.common_config.ssh_keys_dir}/ansible_admin_key \
             -o StrictHostKeyChecking=no \
             -o UserKnownHostsFile=/dev/null \
@@ -396,6 +412,8 @@ resource "null_resource" "upload_fixed_scripts" {
             ubuntu@${oci_core_instance.this[count.index].public_ip} \
             "sudo mv /tmp/$script /usr/local/ansible/jobs/$script && sudo chmod +x /usr/local/ansible/jobs/$script"
       done
+
+      echo "All fixed scripts uploaded successfully"
     EOT
   }
 
