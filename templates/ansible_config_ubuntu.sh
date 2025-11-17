@@ -331,13 +331,17 @@ fi
 
 if [ -n "${MGMT_IP}" ]; then
     sudo /usr/local/ansible/jobs/30-add-storage-nodes.sh || true
+
+    # Wait for storage nodes to fully initialize their volumes before adding them
+    echo "Waiting for storage nodes to initialize volumes..."
+    sleep 30
+
     sudo /usr/local/ansible/jobs/32-add-storage-volumes.sh || true
     sudo /usr/local/ansible/jobs/33-add-storage-volume-group.sh || true
     sudo /usr/local/ansible/jobs/34-create-storage-share.sh || true
     sudo /usr/local/ansible/jobs/35-add-ecgroup-volumes.sh || true
     sudo /usr/local/ansible/jobs/36-add-ecgroup-volume-group.sh || true
     sudo /usr/local/ansible/jobs/37-create-ecgroup-share.sh || true
-fi
 fi
 
 sudo -u $ANSIBLE_USER bash -c "ansible-playbook -i ${ANSIBLE_HOME}/inventory.ini ${ANSIBLE_HOME}/distribute_keys.yml"

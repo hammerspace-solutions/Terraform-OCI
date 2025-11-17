@@ -22,12 +22,6 @@ source "$ANSIBLE_LIB_PATH"
 # --- Main Logic ---
 echo "--- Starting Add Storage Server Volumes Job ---"
 
-# Early exit if storage server volume addition is disabled
-if [ "$add_storage_server_volumes" != "true" ]; then
-  echo "Storage server volume addition is DISABLED (add_storage_server_volumes=$add_storage_server_volumes). Exiting."
-  exit 0
-fi
-
 # 1. Verify inventory file exists
 if [ ! -f "$INVENTORY_FILE" ]; then
   echo "ERROR: Inventory file $INVENTORY_FILE not found." >&2
@@ -43,6 +37,12 @@ share_name=$(awk '/^\[all:vars\]$/{flag=1; next} /^\[.*\]$/{flag=0} flag && /^sh
 add_storage_server_volumes=$(awk '/^\[all:vars\]$/{flag=1; next} /^\[.*\]$/{flag=0} flag && /^add_storage_server_volumes = / {sub(/.*= /, ""); print; exit}' "$INVENTORY_FILE")
 add_ecgroup_volumes=$(awk '/^\[all:vars\]$/{flag=1; next} /^\[.*\]$/{flag=0} flag && /^add_ecgroup_volumes = / {sub(/.*= /, ""); print; exit}' "$INVENTORY_FILE")
 ecgroup_add_to_hammerspace=$(awk '/^\[all:vars\]$/{flag=1; next} /^\[.*\]$/{flag=0} flag && /^ecgroup_add_to_hammerspace = / {sub(/.*= /, ""); print; exit}' "$INVENTORY_FILE")
+
+# Early exit if storage server volume addition is disabled
+if [ "$add_storage_server_volumes" != "true" ]; then
+  echo "Storage server volume addition is DISABLED (add_storage_server_volumes=$add_storage_server_volumes). Exiting."
+  exit 0
+fi
 
 # Debug: Echo parsed vars
 echo "Parsed hs_username: $hs_username"
@@ -171,10 +171,12 @@ cat > "$tmp_playbook" <<EOF
       set_fact:
         volumes_for_add_json: |
           [
+            {% set comma = joiner(",") %}
             {% for item in non_reserved_volumes %}
               {% set full_name = item.node.name ~ ':/' ~ item.exportPath %}
               {% set is_ecgroup = item.node.name.startswith('ecgroup-') or 'ecg' in item.node.name.lower() %}
               {% if full_name not in existing_volumes and not is_ecgroup %}
+                {{ comma() }}
                 {
                   "name": "{{ item.node.name }}::{{ item.exportPath }}",
                   "logicalVolume": {
@@ -193,14 +195,23 @@ cat > "$tmp_playbook" <<EOF
                         "utilizationEvacuationThreshold": 0.9
                     }
                   }
-                }{% if not loop.last %},{% endif %}
+                }
               {% endif %}
             {% endfor %}
           ]
 
-    - name: Parse volumes JSON
-      set_fact:
-        volumes_for_add: "{{ volumes_for_add_json | from_json }}"
+    - name: Parse volumes JSON (with error handling)
+      block:
+        - name: Parse volumes JSON
+          set_fact:
+            volumes_for_add: "{{ volumes_for_add_json | trim | from_json }}"
+      rescue:
+        - name: Log JSON parse warning
+          debug:
+            msg: "Warning: Failed to parse volumes JSON. Setting empty list. Raw JSON: {{ volumes_for_add_json }}"
+        - name: Set empty volumes list on JSON parse failure
+          set_fact:
+            volumes_for_add: []
 
     - name: Check if there are volumes to add
       set_fact:

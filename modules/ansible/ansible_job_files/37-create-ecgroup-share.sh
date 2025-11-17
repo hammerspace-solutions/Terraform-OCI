@@ -178,15 +178,32 @@ cat > "$tmp_playbook" <<EOF
         user: "{{ hs_username }}"
         password: "{{ hs_password }}"
         force_basic_auth: true
-        status_code: 200
+        status_code: 202
         body_format: json
         validate_certs: false
         timeout: 30
       when: not share_exists
       register: share_create
-      until: share_create.status == 200
+      until: share_create.status == 202
       retries: 30
       delay: 10
+
+    - name: Wait for share creation to complete
+      uri:
+        url: "{{ share_create.location }}"
+        method: GET
+        user: "{{ hs_username }}"
+        password: "{{ hs_password }}"
+        force_basic_auth: true
+        validate_certs: false
+        status_code: 200
+        body_format: json
+        timeout: 30
+      register: _result
+      until: _result.json.status == "COMPLETED"
+      retries: 30
+      delay: 10
+      when: not share_exists and share_create.status == 202
 
     - name: Display result
       debug:
@@ -196,8 +213,11 @@ EOF
 echo "Running Ansible playbook to create ECGroup share..."
 ansible-playbook "$tmp_playbook"
 
-# Update state
-echo "$HS_SHARE_NAME" >> "$STATE_FILE"
+# Update state if not already there
+if ! grep -qF "$HS_SHARE_NAME" "$STATE_FILE"; then
+  echo "$HS_SHARE_NAME" >> "$STATE_FILE"
+  echo "State file updated with share: $HS_SHARE_NAME"
+fi
 
 # Clean up
 rm -f "$tmp_playbook"
