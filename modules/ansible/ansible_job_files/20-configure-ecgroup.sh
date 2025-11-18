@@ -144,7 +144,7 @@ if [ ${#new_hosts[@]} -gt 0 ]; then
 
     - name: Create the cluster
       shell: >
-        /opt/rozofs-installer/rozo_rozofs_create.sh -n {{ ecgroup_name }} -s "$ecgroup_hosts" -t external -d 3
+        /opt/rozofs-installer/rozo_rozofs_create.sh -n {{ ecgroup_name }} -s "$ecgroup_hosts" -t external -d 1 -l 1
       register: create_cluster_result
       failed_when:
         - create_cluster_result.rc != 0
@@ -172,7 +172,7 @@ if [ ${#new_hosts[@]} -gt 0 ]; then
 
     - name: Create the array
       shell: >
-        /opt/rozofs-installer/rozo_compute_cluster_balanced.sh -y -n {{ ecgroup_name }} -d "$ECGROUP_STORAGE_ARRAY"
+        /opt/rozofs-installer/rozo_compute_cluster_balanced.sh -m target -y -n {{ ecgroup_name }} -d "$ECGROUP_STORAGE_ARRAY"
       register: compute_cluster_result
       retries: 3
       delay: 10

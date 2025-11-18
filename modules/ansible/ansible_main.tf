@@ -407,6 +407,20 @@ resource "null_resource" "upload_fixed_scripts" {
           ${path.module}/../../templates/ansible_config_main.sh \
           ubuntu@${oci_core_instance.this[count.index].public_ip}:/tmp/ansible_config_main.sh
 
+      # Upload ansible_functions.sh library first
+      echo "Uploading ansible_functions.sh library..."
+      scp -i ${var.common_config.ssh_keys_dir}/ansible_admin_key \
+          -o StrictHostKeyChecking=no \
+          -o UserKnownHostsFile=/dev/null \
+          ${path.module}/ansible_job_files/ansible_functions.sh \
+          ubuntu@${oci_core_instance.this[count.index].public_ip}:/tmp/ansible_functions.sh
+
+      ssh -i ${var.common_config.ssh_keys_dir}/ansible_admin_key \
+          -o StrictHostKeyChecking=no \
+          -o UserKnownHostsFile=/dev/null \
+          ubuntu@${oci_core_instance.this[count.index].public_ip} \
+          "sudo mv /tmp/ansible_functions.sh /usr/local/lib/ansible_functions.sh && sudo chmod 644 /usr/local/lib/ansible_functions.sh"
+
       # Upload all ansible job scripts
       for script in 20-configure-ecgroup.sh 30-add-storage-nodes.sh 32-add-storage-volumes.sh 33-add-storage-volume-group.sh 34-create-storage-share.sh 35-add-ecgroup-volumes.sh 36-add-ecgroup-volume-group.sh 37-create-ecgroup-share.sh; do
         echo "Uploading $script..."

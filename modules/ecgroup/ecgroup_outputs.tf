@@ -79,7 +79,9 @@ output "metadata_array" {
 
 output "storage_array" {
   description = "ECGroup storage array description"
-  value       = var.storage_block_count > 0 ? "HDD_${var.storage_block_size}G" : "LOCAL_NVME_DENSEIO"
+  # RozoFS expects format like "NVME_6.2T" or "HDD_200G" (period, not comma!)
+  # For DenseIO shapes with local NVMe (6.8TB shows as 6.2T usable), use NVME_6.2T
+  value       = var.storage_block_count > 0 ? "HDD_${var.storage_block_size}G" : "NVME_6.2T"
 }
 
 # Detailed volume information
