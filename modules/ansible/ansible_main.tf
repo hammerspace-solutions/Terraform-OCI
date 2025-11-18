@@ -51,11 +51,12 @@ locals {
 
   ansible_shape_is_available = length(data.oci_core_shapes.ansible_shapes.shapes) > 0
 
-  processed_user_data = var.user_data != "" ? templatefile(var.user_data, {
-    ADMIN_USER_PASSWORD    = var.admin_user_password,
+  # Use bootstrap script for cloud-init (small, under 32KB limit)
+  # Main configuration script is uploaded via null_resource after instance creation
+  processed_user_data = var.user_data != "" ? templatefile("${path.module}/../../templates/ansible_bootstrap.sh", {
     TARGET_USER            = var.target_user,
     TARGET_HOME            = "/home/${var.target_user}",
-    ANSIBLE_HOME           = "/home/${var.target_user}",
+    ADMIN_USER_PASSWORD    = var.admin_user_password,
     ADMIN_PRIVATE_KEY      = var.admin_private_key_path != "" ? file(var.admin_private_key_path) : "",
     SSH_KEYS               = join("\n", local.ssh_public_keys),
     TARGET_NODES_JSON      = var.target_nodes_json,
@@ -376,28 +377,37 @@ resource "null_resource" "upload_fixed_scripts" {
                      "36-add-ecgroup-volume-group.sh", "37-create-ecgroup-share.sh"]
       : filemd5("${path.module}/ansible_job_files/${script}")
     ])
+    main_config_hash = filemd5("${path.module}/../../templates/ansible_config_main.sh")
   }
 
-  # Upload all fixed scripts - wait for cloud-init to complete first
+  # Upload main configuration script and ansible job scripts
   provisioner "local-exec" {
     command = <<-EOT
-      # Wait for cloud-init to complete (check for cloud-init status)
-      echo "Waiting for cloud-init to complete on ${oci_core_instance.this[count.index].public_ip}..."
+      # Wait for bootstrap to complete (check for marker file)
+      echo "Waiting for bootstrap to complete on ${oci_core_instance.this[count.index].public_ip}..."
       for i in {1..60}; do
         if ssh -i ${var.common_config.ssh_keys_dir}/ansible_admin_key \
                -o StrictHostKeyChecking=no \
                -o UserKnownHostsFile=/dev/null \
                -o ConnectTimeout=10 \
                ubuntu@${oci_core_instance.this[count.index].public_ip} \
-               "[ -d /usr/local/ansible/jobs ]" 2>/dev/null; then
-          echo "Cloud-init completed, directory exists"
+               "[ -f /var/ansible/bootstrap_complete.txt ]" 2>/dev/null; then
+          echo "Bootstrap completed"
           break
         fi
         echo "Waiting... attempt $i/60"
         sleep 10
       done
 
-      # Upload all fixed scripts
+      # Upload main configuration script
+      echo "Uploading main configuration script..."
+      scp -i ${var.common_config.ssh_keys_dir}/ansible_admin_key \
+          -o StrictHostKeyChecking=no \
+          -o UserKnownHostsFile=/dev/null \
+          ${path.module}/../../templates/ansible_config_main.sh \
+          ubuntu@${oci_core_instance.this[count.index].public_ip}:/tmp/ansible_config_main.sh
+
+      # Upload all ansible job scripts
       for script in 20-configure-ecgroup.sh 30-add-storage-nodes.sh 32-add-storage-volumes.sh 33-add-storage-volume-group.sh 34-create-storage-share.sh 35-add-ecgroup-volumes.sh 36-add-ecgroup-volume-group.sh 37-create-ecgroup-share.sh; do
         echo "Uploading $script..."
         scp -i ${var.common_config.ssh_keys_dir}/ansible_admin_key \
@@ -413,7 +423,15 @@ resource "null_resource" "upload_fixed_scripts" {
             "sudo mv /tmp/$script /usr/local/ansible/jobs/$script && sudo chmod +x /usr/local/ansible/jobs/$script"
       done
 
-      echo "All fixed scripts uploaded successfully"
+      # Execute main configuration script
+      echo "Executing main configuration script..."
+      ssh -i ${var.common_config.ssh_keys_dir}/ansible_admin_key \
+          -o StrictHostKeyChecking=no \
+          -o UserKnownHostsFile=/dev/null \
+          ubuntu@${oci_core_instance.this[count.index].public_ip} \
+          "sudo bash /tmp/ansible_config_main.sh 2>&1 | sudo tee /var/log/ansible_main_config.log"
+
+      echo "Configuration complete - check /var/log/ansible_main_config.log for details"
     EOT
   }
 

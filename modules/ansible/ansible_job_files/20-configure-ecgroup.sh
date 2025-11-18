@@ -146,25 +146,29 @@ if [ ${#new_hosts[@]} -gt 0 ]; then
       shell: >
         /opt/rozofs-installer/rozo_rozofs_create.sh -n {{ ecgroup_name }} -s "$ecgroup_hosts" -t external -d 3
       register: create_cluster_result
-      retries: 3
-      delay: 10
-      until: create_cluster_result.rc == 0
+      failed_when:
+        - create_cluster_result.rc != 0
+        - '"already declared" not in create_cluster_result.stdout'
+      changed_when: create_cluster_result.rc == 0
 
     - name: Add CTDB nodes
       shell: >
         /opt/rozofs-installer/rozo_rozofs_ctdb_node_add.sh -n {{ ecgroup_name }} -c "$ecgroup_hosts"
       register: ctdb_node_add_result
-      retries: 3
-      delay: 10
-      until: ctdb_node_add_result.rc == 0
+      failed_when:
+        - ctdb_node_add_result.rc != 0
+        - '"duplicated" not in ctdb_node_add_result.stdout'
+      changed_when: ctdb_node_add_result.rc == 0
 
-    - name: Setup DRBD
-      shell: >
-        /opt/rozofs-installer/rozo_drbd.sh -y -n {{ ecgroup_name }} -d "$ECGROUP_METADATA_ARRAY"
-      register: drbd_result
-      retries: 3
-      delay: 10
-      until: drbd_result.rc == 0
+    # DRBD is optional - RozoFS provides redundancy through erasure coding
+    # Skipping DRBD setup as it requires LINBIT commercial license
+    # - name: Setup DRBD
+    #   shell: >
+    #     /opt/rozofs-installer/rozo_drbd.sh -y -n {{ ecgroup_name }} -d "$ECGROUP_METADATA_ARRAY"
+    #   register: drbd_result
+    #   retries: 3
+    #   delay: 10
+    #   until: drbd_result.rc == 0
 
     - name: Create the array
       shell: >
