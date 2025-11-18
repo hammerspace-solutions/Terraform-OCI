@@ -82,9 +82,11 @@ fi
 
 # SSH Key Management for OCI
 echo "Managing SSH keys for OCI..."
-TARGET_USER="opc"  # Default OCI user
+TARGET_USER="opc"  # Default OCI user for Oracle Linux
 if [ "$OS_TYPE" = "debian" ]; then
     TARGET_USER="ubuntu"
+elif [ -f /etc/rocky-release ]; then
+    TARGET_USER="rocky"  # Rocky Linux uses 'rocky' user
 fi
 
 TARGET_HOME="/home/$TARGET_USER"

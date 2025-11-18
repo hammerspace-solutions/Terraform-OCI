@@ -1,0 +1,94 @@
+---
+# Playbook to enable root SSH access between ECGroup nodes
+# Run this from the ansible controller: ansible-playbook -i inventory.ini fix_ecgroup_root_ssh.yml
+
+- name: Setup Root SSH Keys for ECGroup Cluster
+  hosts: localhost
+  gather_facts: false
+  vars:
+    ecgroup_nodes:
+      - "10.0.1.38"
+      - "10.0.1.19"
+      - "10.0.1.3"
+      - "10.0.1.42"
+    rocky_user: "rocky"
+    ansible_ssh_private_key_file: "~/.ssh/ansible_admin_key"
+
+  tasks:
+    - name: Generate SSH key for root on each ECGroup node
+      ansible.builtin.shell: |
+        ssh -o StrictHostKeyChecking=no -i {{ ansible_ssh_private_key_file }} {{ rocky_user }}@{{ item }} \
+          "sudo ssh-keygen -t rsa -b 2048 -f /root/.ssh/id_rsa -N '' -q || true"
+      loop: "{{ ecgroup_nodes }}"
+      register: keygen_result
+
+    - name: Fetch root public keys from all ECGroup nodes
+      ansible.builtin.shell: |
+        ssh -o StrictHostKeyChecking=no -i {{ ansible_ssh_private_key_file }} {{ rocky_user }}@{{ item }} \
+          "sudo cat /root/.ssh/id_rsa.pub"
+      loop: "{{ ecgroup_nodes }}"
+      register: pubkeys
+
+    - name: Display collected public keys
+      debug:
+        msg: "Node {{ item.item }}: {{ item.stdout }}"
+      loop: "{{ pubkeys.results }}"
+
+    - name: Combine all public keys
+      set_fact:
+        all_pubkeys: "{{ pubkeys.results | map(attribute='stdout') | join('\n') }}"
+
+    - name: Distribute all root public keys to all ECGroup nodes
+      ansible.builtin.shell: |
+        ssh -o StrictHostKeyChecking=no -i {{ ansible_ssh_private_key_file }} {{ rocky_user }}@{{ item }} \
+          "echo '{{ all_pubkeys }}' | sudo tee -a /root/.ssh/authorized_keys && \
+           sudo chmod 600 /root/.ssh/authorized_keys && \
+           sudo chmod 700 /root/.ssh"
+      loop: "{{ ecgroup_nodes }}"
+
+    - name: Remove duplicate keys from authorized_keys on all nodes
+      ansible.builtin.shell: |
+        ssh -o StrictHostKeyChecking=no -i {{ ansible_ssh_private_key_file }} {{ rocky_user }}@{{ item }} \
+          "sudo sort -u /root/.ssh/authorized_keys | sudo tee /root/.ssh/authorized_keys.tmp && \
+           sudo mv /root/.ssh/authorized_keys.tmp /root/.ssh/authorized_keys"
+      loop: "{{ ecgroup_nodes }}"
+
+    - name: Enable root login in sshd_config on all ECGroup nodes
+      ansible.builtin.shell: |
+        ssh -o StrictHostKeyChecking=no -i {{ ansible_ssh_private_key_file }} {{ rocky_user }}@{{ item }} \
+          "sudo sed -i 's/^#*PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config && \
+           sudo systemctl reload sshd"
+      loop: "{{ ecgroup_nodes }}"
+
+    - name: Test root SSH connectivity between nodes
+      ansible.builtin.shell: |
+        ssh -o StrictHostKeyChecking=no -i {{ ansible_ssh_private_key_file }} {{ rocky_user }}@{{ ecgroup_nodes[0] }} \
+          "sudo ssh -o StrictHostKeyChecking=no root@{{ item }} 'hostname'"
+      loop: "{{ ecgroup_nodes }}"
+      register: ssh_test
+
+    - name: Display SSH test results
+      debug:
+        msg: "Root SSH to {{ item.item }}: {{ item.stdout }}"
+      loop: "{{ ssh_test.results }}"
+
+    - name: Summary
+      debug:
+        msg: |
+          ========================================
+          Root SSH Configuration Complete!
+          ========================================
+
+          All ECGroup nodes should now be able to SSH as root to each other.
+
+          Next Steps:
+          1. SSH to the first ECGroup node: ssh -i ~/.ssh/ansible_admin_key rocky@{{ ecgroup_nodes[0] }}
+          2. Become root: sudo -i
+          3. Run the cluster creation commands:
+
+             NODES="{{ ecgroup_nodes | join(' ') }}"
+             /opt/rozofs-installer/rozo_rozofs_create.sh -n ecg -s "$NODES" -t external -d 3
+             /opt/rozofs-installer/rozo_rozofs_ctdb_node_add.sh -n ecg -c "$NODES"
+             /opt/rozofs-installer/rozo_drbd.sh -y -n ecg -d "/dev/sdb"
+             /opt/rozofs-installer/rozo_compute_cluster_balanced.sh -y -n ecg -d "/dev/nvme0n1"
+             /opt/rozofs-installer/rozo_rozofs_install.sh -n ecg

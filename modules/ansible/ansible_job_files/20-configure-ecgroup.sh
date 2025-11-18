@@ -111,7 +111,7 @@ if [ ${#new_hosts[@]} -gt 0 ]; then
 
   ECGROUP_METADATA_ARRAY="${eg_md_array}"
   ECGROUP_STORAGE_ARRAY="${eg_storage_array}"
-  ECGROUP_USER="debian"              # debian user for ECGroup instances on OCI
+  ECGROUP_USER="rocky"               # rocky user for ECGroup instances on OCI (Rocky Linux)
   ROOT_USER="root"                   # root user needed for ssh
 
   # 6. Create temporary ECGroup inventory

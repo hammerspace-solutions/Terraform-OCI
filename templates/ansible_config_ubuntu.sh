@@ -113,7 +113,77 @@ EOF
 
 chown $ANSIBLE_USER:$ANSIBLE_USER ${ANSIBLE_HOME}/ansible.cfg
 
-sudo mkdir -p /usr/local/ansible/jobs /usr/local/lib /var/run/ansible_jobs_status /var/ansible/trigger
+sudo mkdir -p /usr/local/ansible/jobs /usr/local/lib /var/run/ansible_jobs_status /var/ansible/trigger /var/log/ansible_jobs
+
+# Enhanced logging function for ansible jobs
+run_ansible_job() {
+    local script_name=$1
+    local script_path="/usr/local/ansible/jobs/$script_name"
+    local log_dir="/var/log/ansible_jobs"
+    local log_file="$log_dir/$script_name.log"
+    local status_file="$log_dir/$script_name.status"
+
+    if [ ! -f "$script_path" ]; then
+        echo "⚠ WARNING: Script $script_name not found at $script_path" | tee -a "$log_file"
+        return 1
+    fi
+
+    echo "========================================" | tee -a "$log_file"
+    echo "Running: $script_name" | tee -a "$log_file"
+    echo "Started: $(date)" | tee -a "$log_file"
+    echo "========================================" | tee -a "$log_file"
+
+    if sudo "$script_path" >> "$log_file" 2>&1; then
+        local exit_code=0
+        echo "========================================" | tee -a "$log_file"
+        echo "✓ $script_name completed successfully" | tee -a "$log_file"
+        echo "Finished: $(date)" | tee -a "$log_file"
+        echo "========================================" | tee -a "$log_file"
+        echo "SUCCESS" > "$status_file"
+        return 0
+    else
+        local exit_code=$?
+        echo "========================================" | tee -a "$log_file"
+        echo "✗ $script_name failed with exit code $exit_code" | tee -a "$log_file"
+        echo "Finished: $(date)" | tee -a "$log_file"
+        echo "Log file: $log_file" | tee -a "$log_file"
+        echo "========================================" | tee -a "$log_file"
+        echo "FAILED (exit code: $exit_code)" > "$status_file"
+        return $exit_code
+    fi
+}
+
+# Print summary of ansible job execution
+print_ansible_jobs_summary() {
+    local log_dir="/var/log/ansible_jobs"
+
+    echo ""
+    echo "=========================================="
+    echo "Ansible Jobs Execution Summary"
+    echo "=========================================="
+
+    if [ -d "$log_dir" ] && [ "$(ls -A $log_dir/*.status 2>/dev/null)" ]; then
+        for status_file in $log_dir/*.status; do
+            local script_name=$(basename "$status_file" .status)
+            local status=$(cat "$status_file")
+            local log_file="$log_dir/$script_name.log"
+
+            if [[ "$status" == "SUCCESS" ]]; then
+                echo "  ✓ $script_name - $status"
+            else
+                echo "  ✗ $script_name - $status"
+                echo "    Log: $log_file"
+            fi
+        done
+    else
+        echo "  No ansible jobs were executed"
+    fi
+
+    echo "=========================================="
+    echo "Detailed logs available in: $log_dir/"
+    echo "=========================================="
+    echo ""
+}
 
 # Download ansible scripts from GitHub
 # NOTE: These will be replaced by local versions via null_resource provisioner after instance creation
@@ -173,7 +243,7 @@ echo "" >> /var/ansible/trigger/inventory.ini
 echo "[ecgroup_nodes]" >> /var/ansible/trigger/inventory.ini
 if [ $${#ECGROUP_NODES_ARRAY[@]} -gt 0 ]; then
     for i in "$${!ECGROUP_NODES_ARRAY[@]}"; do
-        echo "$${ECGROUP_NODES_ARRAY[$i]} node_name=\"$${ECGROUP_INSTANCES_ARRAY[$i]:-ecgroup-node-$i}\" ansible_user=debian" >> /var/ansible/trigger/inventory.ini
+        echo "$${ECGROUP_NODES_ARRAY[$i]} node_name=\"$${ECGROUP_INSTANCES_ARRAY[$i]:-ecgroup-node-$i}\" ansible_user=rocky" >> /var/ansible/trigger/inventory.ini
     done
 fi
 
@@ -233,7 +303,7 @@ cat <<EOF > /tmp/ecgroup.yml
   gather_facts: false
   vars:
     ecgroup_name: ecg
-    ansible_user: debian
+    ansible_user: rocky
     ansible_ssh_private_key_file: ${ANSIBLE_HOME}/.ssh/ansible_admin_key
     ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ServerAliveInterval=60"
   become: true
@@ -325,33 +395,279 @@ chown $ANSIBLE_USER:$ANSIBLE_USER "$PLAYBOOK_FILE"
 
 sudo -u $ANSIBLE_USER bash -c "timeout 300 ssh-keyscan -H -f ${ANSIBLE_HOME}/inventory.ini >> ${ANSIBLE_HOME}/.ssh/known_hosts 2>/dev/null || true"
 
+# Distribute root SSH keys for ECGroup nodes (required for RozoFS cluster configuration)
+if [ $${#ECGROUP_NODES_ARRAY[@]} -gt 0 ]; then
+    echo "=========================================="
+    echo "Distributing root SSH keys for ECGroup nodes..."
+    echo "=========================================="
+
+    # Step 1: Generate root SSH keys on each ECGroup node
+    echo "Generating root SSH keys on each node..."
+    for node_ip in "$${ECGROUP_NODES_ARRAY[@]}"; do
+        echo "  - Generating key on $node_ip"
+        ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 \
+            -i ${ANSIBLE_HOME}/.ssh/ansible_admin_key rocky@$node_ip \
+            "sudo mkdir -p /root/.ssh && \
+             sudo chmod 700 /root/.ssh && \
+             sudo ssh-keygen -t rsa -b 2048 -f /root/.ssh/id_rsa -N '' -q || true" || {
+            echo "WARNING: Failed to generate root SSH key on $node_ip"
+        }
+    done
+
+    # Step 2: Collect all root public keys
+    echo "Collecting root public keys from all nodes..."
+    root_pubkeys_file=$(mktemp)
+    for node_ip in "$${ECGROUP_NODES_ARRAY[@]}"; do
+        echo "  - Collecting key from $node_ip"
+        ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 \
+            -i ${ANSIBLE_HOME}/.ssh/ansible_admin_key rocky@$node_ip \
+            "sudo cat /root/.ssh/id_rsa.pub" >> "$root_pubkeys_file" 2>/dev/null || {
+            echo "WARNING: Failed to collect root public key from $node_ip"
+        }
+    done
+
+    # Step 3: Distribute all root public keys to all ECGroup nodes
+    echo "Distributing all root public keys to all nodes..."
+    for node_ip in "$${ECGROUP_NODES_ARRAY[@]}"; do
+        echo "  - Distributing keys to $node_ip"
+        cat "$root_pubkeys_file" | ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 \
+            -i ${ANSIBLE_HOME}/.ssh/ansible_admin_key rocky@$node_ip \
+            "sudo tee -a /root/.ssh/authorized_keys > /dev/null && \
+             sudo sort -u /root/.ssh/authorized_keys | sudo tee /root/.ssh/authorized_keys.tmp > /dev/null && \
+             sudo mv /root/.ssh/authorized_keys.tmp /root/.ssh/authorized_keys && \
+             sudo chmod 600 /root/.ssh/authorized_keys && \
+             sudo chmod 700 /root/.ssh" || {
+            echo "WARNING: Failed to distribute root SSH keys to $node_ip"
+        }
+    done
+
+    # Step 4: Enable root login with public key authentication
+    echo "Configuring SSH to allow root login with keys..."
+    for node_ip in "$${ECGROUP_NODES_ARRAY[@]}"; do
+        ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 \
+            -i ${ANSIBLE_HOME}/.ssh/ansible_admin_key rocky@$node_ip \
+            "sudo sed -i 's/^#*PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config && \
+             sudo systemctl reload sshd" || {
+            echo "WARNING: Failed to configure sshd on $node_ip"
+        }
+    done
+
+    # Step 5: Test root SSH connectivity
+    echo "Testing root SSH connectivity between nodes..."
+    first_node="$${ECGROUP_NODES_ARRAY[0]}"
+    ssh_test_passed=true
+    for node_ip in "$${ECGROUP_NODES_ARRAY[@]}"; do
+        echo "  - Testing root SSH from $first_node to $node_ip"
+        if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+            -i ${ANSIBLE_HOME}/.ssh/ansible_admin_key rocky@$first_node \
+            "sudo ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 root@$node_ip hostname" > /dev/null 2>&1; then
+            echo "    ✓ Success"
+        else
+            echo "    ✗ Failed"
+            ssh_test_passed=false
+        fi
+    done
+
+    # Cleanup
+    rm -f "$root_pubkeys_file"
+
+    if [ "$ssh_test_passed" = true ]; then
+        echo "=========================================="
+        echo "✓ Root SSH key distribution completed successfully"
+        echo "=========================================="
+    else
+        echo "=========================================="
+        echo "⚠ Root SSH key distribution completed with warnings"
+        echo "  Some nodes may not have proper root SSH access"
+        echo "  ECGroup RozoFS configuration may fail"
+        echo "=========================================="
+    fi
+fi
+
 if [ -n "${ECGROUP_INSTANCES}" ]; then
-    sudo /usr/local/ansible/jobs/20-configure-ecgroup.sh || true
+    run_ansible_job "20-configure-ecgroup.sh" || echo "WARNING: ECGroup configuration failed, check logs"
+
+    # Wait for ECGroup RozoFS services to be fully ready
+    if [ $${#ECGROUP_NODES_ARRAY[@]} -gt 0 ]; then
+        echo "=========================================="
+        echo "Waiting for ECGroup RozoFS services to start..."
+        echo "=========================================="
+
+        max_wait=600  # 10 minutes total timeout
+        check_interval=15
+        elapsed=0
+        all_ready=false
+
+        while [ $elapsed -lt $max_wait ]; do
+            echo "Checking ECGroup service health... ($elapsed/$max_wait seconds)"
+
+            ready_count=0
+            total_nodes=$${#ECGROUP_NODES_ARRAY[@]}
+
+            for node_ip in "$${ECGROUP_NODES_ARRAY[@]}"; do
+                # Check if both storage and export services are active
+                if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+                    -i ${ANSIBLE_HOME}/.ssh/ansible_admin_key rocky@$node_ip \
+                    "systemctl is-active --quiet rozofs-storaged && systemctl is-active --quiet rozofs-exportd" 2>/dev/null; then
+                    echo "  ✓ $node_ip - RozoFS services active"
+                    ready_count=$((ready_count + 1))
+                else
+                    echo "  ⏳ $node_ip - Waiting for RozoFS services..."
+                fi
+            done
+
+            if [ $ready_count -eq $total_nodes ]; then
+                echo "=========================================="
+                echo "✓ All $total_nodes ECGroup nodes have RozoFS services running"
+                echo "=========================================="
+                all_ready=true
+                break
+            fi
+
+            echo "  $ready_count/$total_nodes nodes ready, waiting..."
+            sleep $check_interval
+            elapsed=$((elapsed + check_interval))
+        done
+
+        if [ "$all_ready" = false ]; then
+            echo "=========================================="
+            echo "⚠ WARNING: ECGroup RozoFS services did not start on all nodes within timeout"
+            echo "  This may cause ECGroup volume addition to fail"
+            echo "  Check /var/log/cloud-init-output.log on ECGroup nodes for errors"
+            echo "=========================================="
+        else
+            # Additional wait for volume initialization after services are up
+            echo "Services are up, waiting 30 seconds for volume initialization..."
+            sleep 30
+
+            # Verify volumes are available
+            echo "Verifying ECGroup volumes are available..."
+            first_node="$${ECGROUP_NODES_ARRAY[0]}"
+            if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+                -i ${ANSIBLE_HOME}/.ssh/ansible_admin_key rocky@$first_node \
+                "df -h | grep -q rozofs" 2>/dev/null; then
+                echo "✓ RozoFS volumes are mounted and accessible"
+            else
+                echo "⚠ WARNING: RozoFS volumes may not be mounted properly"
+            fi
+        fi
+    fi
 fi
 
 if [ -n "${MGMT_IP}" ]; then
-    sudo /usr/local/ansible/jobs/30-add-storage-nodes.sh || true
+    run_ansible_job "30-add-storage-nodes.sh" || echo "WARNING: Storage node addition failed, check logs"
 
     # Wait for storage nodes to fully initialize their volumes before adding them
-    echo "Waiting for storage nodes to initialize volumes..."
-    sleep 30
+    echo "=========================================="
+    echo "Waiting for storage server volumes to initialize..."
+    echo "=========================================="
 
-    sudo /usr/local/ansible/jobs/32-add-storage-volumes.sh || true
-    sudo /usr/local/ansible/jobs/33-add-storage-volume-group.sh || true
-    sudo /usr/local/ansible/jobs/34-create-storage-share.sh || true
-    sudo /usr/local/ansible/jobs/35-add-ecgroup-volumes.sh || true
-    sudo /usr/local/ansible/jobs/36-add-ecgroup-volume-group.sh || true
-    sudo /usr/local/ansible/jobs/37-create-ecgroup-share.sh || true
+    max_wait=300  # 5 minutes
+    check_interval=10
+    elapsed=0
+    volumes_ready=false
+
+    # Parse storage server IPs from JSON
+    storage_ips=$(echo '${STORAGE_INSTANCES}' | jq -r '.[].private_ip' 2>/dev/null || echo "")
+
+    if [ -n "$storage_ips" ]; then
+        while [ $elapsed -lt $max_wait ]; do
+            echo "Checking storage server volumes... ($elapsed/$max_wait seconds)"
+
+            ready_count=0
+            total_servers=$(echo "$storage_ips" | wc -l)
+
+            for server_ip in $storage_ips; do
+                # Check if storage volumes are mounted
+                if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+                    -i ${ANSIBLE_HOME}/.ssh/ansible_admin_key ${TARGET_USER}@$server_ip \
+                    "df -h | grep -q hsvol" 2>/dev/null; then
+                    echo "  ✓ $server_ip - Storage volumes mounted"
+                    ready_count=$((ready_count + 1))
+                else
+                    echo "  ⏳ $server_ip - Waiting for volumes..."
+                fi
+            done
+
+            if [ $ready_count -eq $total_servers ]; then
+                echo "=========================================="
+                echo "✓ All $total_servers storage servers have volumes mounted"
+                echo "=========================================="
+                volumes_ready=true
+                break
+            fi
+
+            echo "  $ready_count/$total_servers servers ready, waiting..."
+            sleep $check_interval
+            elapsed=$((elapsed + check_interval))
+        done
+
+        if [ "$volumes_ready" = false ]; then
+            echo "=========================================="
+            echo "⚠ WARNING: Storage server volumes did not initialize within timeout"
+            echo "  Proceeding anyway, but volume addition may fail"
+            echo "=========================================="
+            # Still add a minimum wait
+            sleep 30
+        fi
+    else
+        # Fallback to simple wait if we can't parse storage IPs
+        echo "Using fallback 30-second wait..."
+        sleep 30
+    fi
+
+    run_ansible_job "32-add-storage-volumes.sh" || echo "WARNING: Storage volume addition failed"
+    run_ansible_job "33-add-storage-volume-group.sh" || echo "WARNING: Storage volume group creation failed"
+    run_ansible_job "34-create-storage-share.sh" || echo "WARNING: Storage share creation failed"
+    run_ansible_job "35-add-ecgroup-volumes.sh" || echo "WARNING: ECGroup volume addition failed"
+    run_ansible_job "36-add-ecgroup-volume-group.sh" || echo "WARNING: ECGroup volume group creation failed"
+    run_ansible_job "37-create-ecgroup-share.sh" || echo "WARNING: ECGroup share creation failed"
 fi
+
+# Print execution summary
+print_ansible_jobs_summary
 
 sudo -u $ANSIBLE_USER bash -c "ansible-playbook -i ${ANSIBLE_HOME}/inventory.ini ${ANSIBLE_HOME}/distribute_keys.yml"
 
 cat > ${ANSIBLE_HOME}/oci-status.txt << EOF
+========================================
+OCI Deployment Status
+========================================
 Date: $(date)
 User: $ANSIBLE_USER
-Inventory: ${ANSIBLE_HOME}/inventory.ini
-Job Scripts: /usr/local/ansible/jobs/
-Trigger Inventory: /var/ansible/trigger/inventory.ini
+
+Configuration Files:
+  - Inventory: ${ANSIBLE_HOME}/inventory.ini
+  - Trigger Inventory: /var/ansible/trigger/inventory.ini
+  - Ansible Config: ${ANSIBLE_HOME}/ansible.cfg
+
+Scripts:
+  - Job Scripts: /usr/local/ansible/jobs/
+  - Function Library: /usr/local/lib/ansible_functions.sh
+
+Logs:
+  - Cloud-Init: /var/log/cloud-init-output.log
+  - Ansible Jobs: /var/log/ansible_jobs/
+  - Ansible Main: /var/log/ansible.log
+
+Health Checks:
+  - Check storage server volumes: ssh <storage-ip> "df -h | grep hsvol"
+  - Check ECGroup services: ssh <ecgroup-ip> "systemctl status rozofs-*"
+  - Check ECGroup volumes: ssh <ecgroup-ip> "df -h | grep rozofs"
+
+Troubleshooting:
+  1. View ansible job summary: cat /var/log/ansible_jobs/*.status
+  2. View specific job log: cat /var/log/ansible_jobs/<script-name>.log
+  3. Re-run failed job: sudo /usr/local/ansible/jobs/<script-name>.sh
+
+========================================
 EOF
 
 chown $ANSIBLE_USER:$ANSIBLE_USER ${ANSIBLE_HOME}/oci-status.txt
+
+echo ""
+echo "=========================================="
+echo "✓ Ansible Controller Configuration Complete"
+echo "=========================================="
+echo "Status file created at: ${ANSIBLE_HOME}/oci-status.txt"
+echo ""
