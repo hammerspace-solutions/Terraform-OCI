@@ -80,6 +80,28 @@ else
     fi
 fi
 
+# Configure SELinux for RozoFS compatibility
+echo "Configuring SELinux for RozoFS..."
+if [ "$OS_TYPE" = "oracle" ] && command -v getenforce &> /dev/null; then
+    # Check if SELinux is enabled
+    if [ "$(getenforce)" != "Disabled" ]; then
+        echo "Setting SELinux to permissive mode for RozoFS compatibility"
+        # Set to permissive immediately (no reboot required)
+        sudo setenforce 0 || true
+
+        # Make it permanent across reboots
+        sudo sed -i 's/^SELINUX=enforcing/SELINUX=permissive/' /etc/selinux/config
+        sudo sed -i 's/^SELINUX=enforcing/SELINUX=permissive/' /etc/sysconfig/selinux 2>/dev/null || true
+
+        echo "SELinux set to permissive mode (allows operations, logs denials)"
+        echo "Current status: $(getenforce)"
+    else
+        echo "SELinux is disabled, no changes needed"
+    fi
+else
+    echo "SELinux not present or OS is Debian-based, skipping"
+fi
+
 # SSH Key Management for OCI
 echo "Managing SSH keys for OCI..."
 TARGET_USER="opc"  # Default OCI user for Oracle Linux
