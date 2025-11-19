@@ -68,6 +68,39 @@ locals {
 
   # Check if shape is DenseIO (has local NVMe drives)
   is_denseio_shape = can(regex("DenseIO", var.shape))
+
+  # === UNIFIED DEVICE-AGNOSTIC CONFIGURATION ===
+  # Auto-detect storage strategy based on shape
+  use_local_nvme    = local.is_denseio_shape
+  use_block_storage = !local.is_denseio_shape
+
+  # Calculate NVMe drives available (DenseIO shapes: 1 drive per 8 OCPUs)
+  nvme_drives_per_node = local.is_denseio_shape ? floor(var.ocpus / 8) : 0
+
+  # Calculate block storage volumes needed (if not using NVMe)
+  block_volumes_per_node = local.use_block_storage ? var.storage_block_count : 0
+
+  # Total devices per node (NVMe OR block storage, not both)
+  total_devices_per_node = local.use_local_nvme ? local.nvme_drives_per_node : local.block_volumes_per_node
+
+  # Total cluster devices
+  total_cluster_devices = local.total_devices_per_node * var.node_count
+
+  # Auto-calculate optimal RozoFS layout based on total devices
+  # Layout 0 (2+1): 3-5 devices
+  # Layout 1 (4+2): 6-11 devices
+  # Layout 2 (8+4): 12+ devices
+  optimal_layout = (
+    local.total_cluster_devices >= 12 ? 2 :
+    local.total_cluster_devices >= 6  ? 1 :
+    0
+  )
+
+  # Device type string for RozoFS (NVME_6.2T or HDD_200G)
+  device_type = local.use_local_nvme ? "NVME_6.2T" : "HDD_${var.storage_block_size}G"
+
+  # Storage technology tag
+  storage_technology = local.use_local_nvme ? "local-nvme" : "block-storage"
 }
 
 # Network Security Group for ECGroup instances

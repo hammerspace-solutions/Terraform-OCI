@@ -12,6 +12,7 @@ ANSIBLE_LIB_PATH="/usr/local/lib/ansible_functions.sh"
 INVENTORY_FILE="/var/ansible/trigger/inventory.ini"
 STATE_FILE="/var/run/ansible_jobs_status/configured_ecgroup_nodes.txt"  # Track configured ECGroup nodes
 ECGROUP_PRIVATE_KEY_PATH="/home/ubuntu/.ssh/ansible_admin_key"
+ECGROUP_USER="rocky"  # Default user for ECGroup instances (Rocky Linux)
 
 # --- Source the function library ---
 if [ ! -f "$ANSIBLE_LIB_PATH" ]; then
@@ -34,11 +35,44 @@ fi
 
 eg_md_array=$(awk '/^\[all:vars\]$/{flag=1; next} /^\[.*\]$/{flag=0} flag && /ecgroup_metadata_array = / \
 {sub(/.*= /, ""); print}' "$INVENTORY_FILE")
-eg_storage_array=$(awk '/^\[all:vars\]$/{flag=1; next} /^\[.*\]$/{flag=0} flag && /ecgroup_storage_array = / \
-{sub(/.*= /, ""); print}' "$INVENTORY_FILE")
 
 echo "[configure-ecgroup] EC_MD_ARRAY = $eg_md_array"
-echo "[configure-ecgroup] EC_ST_ARRAY = $eg_storage_array"
+
+# === DYNAMIC DEVICE DETECTION (Device-Agnostic Configuration) ===
+# Query first node for actual storage type instead of hardcoding
+# This makes the configuration work with both NVMe and block storage
+
+first_node_ip=$(awk '/^\[ecgroup_nodes\]/{flag=1; next} /^\[/{flag=0} flag && /^[0-9]/{print $1; exit}' "$INVENTORY_FILE")
+
+echo "[configure-ecgroup] Detecting storage type from first node: $first_node_ip"
+
+# Query the node for its detected storage type
+storage_type=$(ssh -i "$ECGROUP_PRIVATE_KEY_PATH" -o StrictHostKeyChecking=no \
+  "$ECGROUP_USER@$first_node_ip" "cat /etc/rozofs/storage_type.txt 2>/dev/null || echo 'unknown'")
+
+echo "[configure-ecgroup] Detected storage type: $storage_type"
+
+# Auto-detect device type and size from the node's available devices
+device_info=$(ssh -i "$ECGROUP_PRIVATE_KEY_PATH" -o StrictHostKeyChecking=no \
+  "$ECGROUP_USER@$first_node_ip" \
+  "head -2 /etc/rozofs/available_devices.txt | tail -1 2>/dev/null || echo 'unknown:unknown:unknown'")
+
+# Parse device info (format: TYPE:DEVICE:SIZE)
+device_size=$(echo "$device_info" | cut -d: -f3)
+
+# Build storage array string based on detected type
+if [ "$storage_type" = "nvme" ]; then
+    eg_storage_array="NVME_${device_size}"
+elif [ "$storage_type" = "block" ]; then
+    eg_storage_array="HDD_${device_size}"
+else
+    # Fallback to inventory variable if detection fails
+    eg_storage_array=$(awk '/^\[all:vars\]$/{flag=1; next} /^\[.*\]$/{flag=0} flag && /ecgroup_storage_array = / \
+    {sub(/.*= /, ""); print}' "$INVENTORY_FILE")
+    echo "[configure-ecgroup] WARNING: Could not detect storage type, using inventory value"
+fi
+
+echo "[configure-ecgroup] EC_ST_ARRAY = $eg_storage_array (auto-detected)"
 
 # 3. Parse ecgroup_nodes with IPs and names
 
@@ -111,7 +145,6 @@ if [ ${#new_hosts[@]} -gt 0 ]; then
 
   ECGROUP_METADATA_ARRAY="${eg_md_array}"
   ECGROUP_STORAGE_ARRAY="${eg_storage_array}"
-  ECGROUP_USER="rocky"               # rocky user for ECGroup instances on OCI (Rocky Linux)
   ROOT_USER="root"                   # root user needed for ssh
 
   # 6. Create temporary ECGroup inventory
@@ -172,7 +205,7 @@ if [ ${#new_hosts[@]} -gt 0 ]; then
 
     - name: Create the array
       shell: >
-        /opt/rozofs-installer/rozo_compute_cluster_balanced.sh -m target -y -n {{ ecgroup_name }} -d "$ECGROUP_STORAGE_ARRAY"
+        /opt/rozofs-installer/rozo_compute_cluster_balanced.sh -y -n {{ ecgroup_name }} -d "$ECGROUP_STORAGE_ARRAY"
       register: compute_cluster_result
       retries: 3
       delay: 10

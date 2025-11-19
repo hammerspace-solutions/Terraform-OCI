@@ -78,10 +78,10 @@ output "metadata_array" {
 }
 
 output "storage_array" {
-  description = "ECGroup storage array description"
+  description = "ECGroup storage array description (device-agnostic)"
   # RozoFS expects format like "NVME_6.2T" or "HDD_200G" (period, not comma!)
-  # For DenseIO shapes with local NVMe (6.8TB shows as 6.2T usable), use NVME_6.2T
-  value       = var.storage_block_count > 0 ? "HDD_${var.storage_block_size}G" : "NVME_6.2T"
+  # Auto-detected based on shape type
+  value       = local.device_type
 }
 
 # Detailed volume information
@@ -145,19 +145,46 @@ output "node_volume_mapping" {
   }
 }
 
-# Configuration summary
+# Configuration summary (device-agnostic)
 output "deployment_summary" {
-  description = "Summary of the ECGroup deployment"
+  description = "Summary of the ECGroup deployment with unified device-agnostic configuration"
   value = {
-    node_count               = var.node_count
-    shape                    = var.shape
-    is_denseio_shape         = can(regex("DenseIO", var.shape))
-    local_nvme_note          = can(regex("DenseIO", var.shape)) ? "DenseIO shapes include local NVMe drives. BM.DenseIO.E5.128 has 8x 6.8TB NVMe drives." : "No local NVMe drives"
-    metadata_volume_size_gb  = var.metadata_block_size
-    storage_volume_size_gb   = var.storage_block_size
-    storage_volumes_per_node = var.storage_block_count
-    total_storage_volumes    = var.node_count * var.storage_block_count
-    region                   = var.common_config.region
-    availability_domain      = var.common_config.availability_domain
+    # Basic cluster info
+    node_count          = var.node_count
+    shape               = var.shape
+    region              = var.common_config.region
+    availability_domain = var.common_config.availability_domain
+
+    # Storage strategy (auto-detected)
+    storage_technology         = local.storage_technology
+    use_local_nvme             = local.use_local_nvme
+    use_block_storage          = local.use_block_storage
+
+    # Device configuration (unified)
+    devices_per_node           = local.total_devices_per_node
+    total_cluster_devices      = local.total_cluster_devices
+    device_type                = local.device_type
+
+    # RozoFS configuration (auto-calculated)
+    optimal_layout             = local.optimal_layout
+    layout_description         = local.optimal_layout == 0 ? "Layout 0 (2+1)" : local.optimal_layout == 1 ? "Layout 1 (4+2)" : "Layout 2 (8+4)"
+    fault_tolerance            = local.optimal_layout == 0 ? 1 : local.optimal_layout == 1 ? 2 : 4
+
+    # Capacity estimates
+    metadata_volume_size_gb    = var.metadata_block_size
+    storage_volume_size_gb     = var.storage_block_size
+    nvme_drives_per_node       = local.nvme_drives_per_node
+    block_volumes_per_node     = local.block_volumes_per_node
+  }
+}
+
+# Unified cluster configuration output for ansible
+output "cluster_config" {
+  description = "Unified cluster configuration for RozoFS ansible scripts"
+  value = {
+    device_type    = local.device_type
+    optimal_layout = local.optimal_layout
+    total_devices  = local.total_cluster_devices
+    storage_tech   = local.storage_technology
   }
 }
