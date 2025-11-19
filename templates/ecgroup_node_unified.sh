@@ -32,10 +32,10 @@ echo "Updating system packages..."
 if [ "$OS_TYPE" = "oracle" ]; then
     sudo $PKG_MGR -y update
     sudo $PKG_MGR -y install epel-release || true
-    sudo $PKG_MGR -y install net-tools wget curl bind-utils nvme-cli lvm2 parted
+    sudo $PKG_MGR -y install net-tools wget curl bind-utils nvme-cli lvm2 parted nfs-utils
 else
     sudo apt-get -y update
-    sudo apt-get -y install net-tools wget curl dnsutils nvme-cli lvm2 parted
+    sudo apt-get -y install net-tools wget curl dnsutils nvme-cli lvm2 parted nfs-kernel-server
 fi
 
 # Configure SSH settings for OCI
@@ -68,6 +68,10 @@ if [ "$OS_TYPE" = "oracle" ]; then
         sudo firewall-cmd --permanent --add-port=873/tcp || true
         sudo firewall-cmd --permanent --add-port=9090/tcp || true
         sudo firewall-cmd --permanent --add-port=50000-51000/tcp || true
+        # NFS ports for Hammerspace integration
+        sudo firewall-cmd --permanent --add-port=2049/tcp || true
+        sudo firewall-cmd --permanent --add-port=20048/tcp || true
+        sudo firewall-cmd --permanent --add-port=111/tcp || true
         sudo firewall-cmd --reload || true
     else
         echo "firewalld not installed, skipping firewall configuration (ports may need manual configuration)"
@@ -79,6 +83,10 @@ else
         sudo ufw allow 873/tcp
         sudo ufw allow 9090/tcp
         sudo ufw allow 50000:51000/tcp
+        # NFS ports for Hammerspace integration
+        sudo ufw allow 2049/tcp
+        sudo ufw allow 20048/tcp
+        sudo ufw allow 111/tcp
         sudo ufw --force enable
     else
         echo "ufw not available on this system, skipping firewall configuration"

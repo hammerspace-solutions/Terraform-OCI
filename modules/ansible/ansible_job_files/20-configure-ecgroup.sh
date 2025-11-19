@@ -218,6 +218,66 @@ if [ ${#new_hosts[@]} -gt 0 ]; then
       retries: 3
       delay: 10
       until: install_result.rc == 0
+
+    # Configure NFS exports for Hammerspace integration
+    - name: Set standalone mode to False for Hammerspace integration
+      lineinfile:
+        path: /etc/rozofs/rozofs.conf
+        regexp: '^\s*standalone\s*='
+        line: '   standalone                                         = False;'
+        backup: yes
+
+    - name: Update common_config.txt standalone setting
+      lineinfile:
+        path: /opt/ROZOFS_CLUSTER/{{ ecgroup_name }}/common_config.txt
+        regexp: '^standalone '
+        line: 'standalone False'
+        backup: yes
+      run_once: true
+
+    - name: Create RozoFS mount point for NFS export
+      file:
+        path: /mnt/rozofs/NVME
+        state: directory
+        mode: '0755'
+
+    - name: Mount RozoFS NVME export locally
+      shell: |
+        if ! mount | grep -q '/mnt/rozofs/NVME'; then
+          rozofsmount -H ec-1/ec-2/ec-3 -E /srv/rozofs/exports/NVME /mnt/rozofs/NVME
+        fi
+      args:
+        executable: /bin/bash
+
+    - name: Wait for RozoFS mount to be ready
+      wait_for:
+        path: /mnt/rozofs/NVME
+        state: present
+        timeout: 60
+
+    - name: Configure NFS export for Hammerspace
+      copy:
+        dest: /etc/exports
+        content: |
+          /mnt/rozofs/NVME    10.0.1.0/24(rw,sync,no_root_squash,no_subtree_check,fsid=1)
+        backup: yes
+
+    - name: Enable and start NFS server
+      systemd:
+        name: nfs-server
+        enabled: yes
+        state: started
+
+    - name: Apply NFS exports
+      command: exportfs -ra
+
+    - name: Verify NFS export
+      command: exportfs -v
+      register: nfs_exports
+
+    - name: Display NFS exports
+      debug:
+        var: nfs_exports.stdout_lines
   run_once: true
 EOF
 
