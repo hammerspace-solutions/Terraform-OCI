@@ -161,12 +161,16 @@ if [ ${#new_hosts[@]} -gt 0 ]; then
   # 7. Combined playbook for configuring ECGroup (OCI-optimized with Rocky fixes)
 
   tmp_playbook=$(mktemp)
-  cat > "$tmp_playbook" <<'EOF'
+  cat > "$tmp_playbook" <<EOF
 - name: Configure ECGroup from the OCI controller node
   hosts: ecgroup
   gather_facts: true
   vars:
     ecgroup_name: "ecg"
+    ecgroup_hosts: "$ecgroup_hosts"
+    ecgroup_nodes: "$ecgroup_nodes"
+    ecgroup_metadata_array: "$ECGROUP_METADATA_ARRAY"
+    ecgroup_storage_array: "$ECGROUP_STORAGE_ARRAY"
     ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
   become: true
   tasks:
@@ -177,7 +181,7 @@ if [ ${#new_hosts[@]} -gt 0 ]; then
 
     - name: Create the cluster
       shell: >
-        /opt/rozofs-installer/rozo_rozofs_create.sh -n {{ ecgroup_name }} -s "$ecgroup_hosts" -t external -d 1 -l 1
+        /opt/rozofs-installer/rozo_rozofs_create.sh -n {{ ecgroup_name }} -s "{{ ecgroup_hosts }}" -t external -d 1 -l 1
       register: create_cluster_result
       failed_when:
         - create_cluster_result.rc != 0
@@ -186,7 +190,7 @@ if [ ${#new_hosts[@]} -gt 0 ]; then
 
     - name: Add CTDB nodes
       shell: >
-        /opt/rozofs-installer/rozo_rozofs_ctdb_node_add.sh -n {{ ecgroup_name }} -c "$ecgroup_hosts"
+        /opt/rozofs-installer/rozo_rozofs_ctdb_node_add.sh -n {{ ecgroup_name }} -c "{{ ecgroup_hosts }}"
       register: ctdb_node_add_result
       failed_when:
         - ctdb_node_add_result.rc != 0
@@ -198,7 +202,7 @@ if [ ${#new_hosts[@]} -gt 0 ]; then
 
     - name: Create the array
       shell: >
-        /opt/rozofs-installer/rozo_compute_cluster_balanced.sh -y -n {{ ecgroup_name }} -d "$ECGROUP_STORAGE_ARRAY"
+        /opt/rozofs-installer/rozo_compute_cluster_balanced.sh -y -n {{ ecgroup_name }} -d "{{ ecgroup_storage_array }}"
       register: compute_cluster_result
       retries: 3
       delay: 10
