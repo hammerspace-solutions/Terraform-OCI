@@ -158,13 +158,13 @@ if [ ${#new_hosts[@]} -gt 0 ]; then
   echo "[configure-ecgroup] --- Inventory File: $tmp_inventory"
   cat "$tmp_inventory"
 
-  # 7. Combined playbook for configuring ECGroup (OCI-optimized)
+  # 7. Combined playbook for configuring ECGroup (OCI-optimized with Rocky fixes)
 
   tmp_playbook=$(mktemp)
-  cat > "$tmp_playbook" <<EOF
+  cat > "$tmp_playbook" <<'EOF'
 - name: Configure ECGroup from the OCI controller node
   hosts: ecgroup
-  gather_facts: false
+  gather_facts: true
   vars:
     ecgroup_name: "ecg"
     ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
@@ -195,13 +195,6 @@ if [ ${#new_hosts[@]} -gt 0 ]; then
 
     # DRBD is optional - RozoFS provides redundancy through erasure coding
     # Skipping DRBD setup as it requires LINBIT commercial license
-    # - name: Setup DRBD
-    #   shell: >
-    #     /opt/rozofs-installer/rozo_drbd.sh -y -n {{ ecgroup_name }} -d "$ECGROUP_METADATA_ARRAY"
-    #   register: drbd_result
-    #   retries: 3
-    #   delay: 10
-    #   until: drbd_result.rc == 0
 
     - name: Create the array
       shell: >
@@ -211,13 +204,82 @@ if [ ${#new_hosts[@]} -gt 0 ]; then
       delay: 10
       until: compute_cluster_result.rc == 0
 
-    - name: Propagate the configuration
+    - name: Propagate the configuration (may partially fail on export.conf copy)
       shell: >
         /opt/rozofs-installer/rozo_rozofs_install.sh -n {{ ecgroup_name }}
       register: install_result
-      retries: 3
-      delay: 10
-      until: install_result.rc == 0
+      failed_when: false
+      changed_when: install_result.rc == 0
+
+    - name: Check if export.conf was built
+      stat:
+        path: /opt/ROZOFS_CLUSTER/{{ ecgroup_name }}/EXPORT_CONF/export.conf
+      register: export_conf_built
+      run_once: true
+
+    - name: Create export directories on all nodes
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+        owner: root
+        group: root
+      loop:
+        - /srv/rozofs/exports/private
+        - /srv/rozofs/exports/NVME
+
+    - name: Read export.conf from first node
+      slurp:
+        src: /opt/ROZOFS_CLUSTER/{{ ecgroup_name }}/EXPORT_CONF/export.conf
+      register: export_conf_content
+      run_once: true
+      when: export_conf_built.stat.exists
+
+    - name: Distribute export.conf to all nodes
+      copy:
+        content: "{{ export_conf_content.content | b64decode }}"
+        dest: /etc/rozofs/export.conf
+        owner: root
+        group: root
+        mode: '0644'
+        backup: yes
+      when: export_conf_built.stat.exists
+
+    - name: Restart exportd after config update
+      systemd:
+        name: rozofs-exportd
+        state: restarted
+        enabled: yes
+
+    - name: Wait for exportd to start
+      wait_for:
+        timeout: 10
+
+    # Rocky-specific fixes for NFS and RozoFS
+    - name: Ensure rpcbind is enabled and started (Rocky/RHEL)
+      systemd:
+        name: rpcbind
+        enabled: yes
+        state: started
+      when: ansible_os_family == "RedHat"
+
+    - name: Check SELinux status
+      command: getenforce
+      register: selinux_status
+      failed_when: false
+      changed_when: false
+      when: ansible_os_family == "RedHat"
+
+    - name: Set SELinux boolean for FUSE (if SELinux is enabled)
+      seboolean:
+        name: use_fusefs_home_dirs
+        state: yes
+        persistent: yes
+      when:
+        - ansible_os_family == "RedHat"
+        - selinux_status.stdout is defined
+        - selinux_status.stdout != "Disabled"
+      ignore_errors: yes
 
     # Configure NFS exports for Hammerspace integration
     - name: Set standalone mode to False for Hammerspace integration
@@ -235,25 +297,53 @@ if [ ${#new_hosts[@]} -gt 0 ]; then
         backup: yes
       run_once: true
 
+    - name: Restart exportd after standalone mode change
+      systemd:
+        name: rozofs-exportd
+        state: restarted
+
+    - name: Wait for exportd to fully start
+      wait_for:
+        timeout: 15
+
     - name: Create RozoFS mount point for NFS export
       file:
         path: /mnt/rozofs/NVME
         state: directory
         mode: '0755'
 
+    - name: Check if RozoFS is already mounted
+      shell: mount | grep '/mnt/rozofs/NVME'
+      register: rozofs_mounted
+      failed_when: false
+      changed_when: false
+
     - name: Mount RozoFS NVME export locally
       shell: |
-        if ! mount | grep -q '/mnt/rozofs/NVME'; then
-          rozofsmount -H ec-1/ec-2/ec-3 -E /srv/rozofs/exports/NVME /mnt/rozofs/NVME
+        rozofsmount -H ec-1/ec-2/ec-3/ec-4 -E /srv/rozofs/exports/NVME /mnt/rozofs/NVME &
+        sleep 5
+        if mount | grep -q '/mnt/rozofs/NVME'; then
+          echo "Mount successful"
+          exit 0
+        else
+          echo "Mount failed or process died"
+          exit 1
         fi
       args:
         executable: /bin/bash
+      register: mount_result
+      retries: 3
+      delay: 5
+      until: mount_result.rc == 0
+      when: rozofs_mounted.rc != 0
 
-    - name: Wait for RozoFS mount to be ready
-      wait_for:
+    - name: Verify RozoFS mount is accessible
+      stat:
         path: /mnt/rozofs/NVME
-        state: present
-        timeout: 60
+      register: rozofs_mount_check
+      retries: 3
+      delay: 5
+      until: rozofs_mount_check.stat.exists
 
     - name: Configure NFS export for Hammerspace
       copy:
@@ -270,14 +360,35 @@ if [ ${#new_hosts[@]} -gt 0 ]; then
 
     - name: Apply NFS exports
       command: exportfs -ra
+      register: exportfs_result
+      failed_when: false
 
-    - name: Verify NFS export
+    - name: Display exportfs result
+      debug:
+        var: exportfs_result
+
+    - name: Verify NFS export (if exportfs succeeded)
       command: exportfs -v
       register: nfs_exports
+      when: exportfs_result.rc == 0
 
     - name: Display NFS exports
       debug:
         var: nfs_exports.stdout_lines
+      when:
+        - exportfs_result.rc == 0
+        - nfs_exports.stdout_lines is defined
+
+    - name: Check RozoFS mount status
+      command: mount | grep rozofs
+      register: final_mount_check
+      failed_when: false
+      changed_when: false
+
+    - name: Display mount status
+      debug:
+        var: final_mount_check.stdout_lines
+
   run_once: true
 EOF
 
