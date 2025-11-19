@@ -58,24 +58,29 @@ fi
 # Configure firewall for OCI ECGroup requirements
 echo "Configuring firewall for ECGroup..."
 if [ "$OS_TYPE" = "oracle" ]; then
-    # Configure firewalld for Oracle Linux
-    if systemctl list-unit-files | grep -q firewalld.service; then
-        sudo systemctl enable firewalld || echo "Could not enable firewalld"
-        sudo systemctl start firewalld || echo "Could not start firewalld"
+    # Install firewalld for Oracle/Rocky Linux
+    echo "Installing firewalld..."
+    sudo $PKG_MGR -y install firewalld
 
-        # Open required ports for ECGroup/RozoFS
-        sudo firewall-cmd --permanent --add-port=22/tcp || true
-        sudo firewall-cmd --permanent --add-port=873/tcp || true
-        sudo firewall-cmd --permanent --add-port=9090/tcp || true
-        sudo firewall-cmd --permanent --add-port=50000-51000/tcp || true
-        # NFS ports for Hammerspace integration
-        sudo firewall-cmd --permanent --add-port=2049/tcp || true
-        sudo firewall-cmd --permanent --add-port=20048/tcp || true
-        sudo firewall-cmd --permanent --add-port=111/tcp || true
-        sudo firewall-cmd --reload || true
-    else
-        echo "firewalld not installed, skipping firewall configuration (ports may need manual configuration)"
-    fi
+    # Configure firewalld for Oracle Linux
+    echo "Configuring firewalld..."
+    sudo systemctl enable firewalld || echo "Could not enable firewalld"
+    sudo systemctl start firewalld || echo "Could not start firewalld"
+
+    # Open required ports for ECGroup/RozoFS
+    sudo firewall-cmd --permanent --add-port=22/tcp || true
+    sudo firewall-cmd --permanent --add-port=873/tcp || true
+    sudo firewall-cmd --permanent --add-port=9090/tcp || true
+    sudo firewall-cmd --permanent --add-port=50000-51000/tcp || true
+    # RozoFS specific ports (matching ansible configuration)
+    sudo firewall-cmd --permanent --add-port=52000-52008/tcp || true
+    sudo firewall-cmd --permanent --add-port=53000-53008/tcp || true
+    sudo firewall-cmd --permanent --add-port=41001/tcp || true
+    # NFS ports for Hammerspace integration
+    sudo firewall-cmd --permanent --add-port=2049/tcp || true
+    sudo firewall-cmd --permanent --add-port=20048/tcp || true
+    sudo firewall-cmd --permanent --add-port=111/tcp || true
+    sudo firewall-cmd --reload || true
 else
     # Configure ufw for Ubuntu/Debian
     if command -v ufw &> /dev/null; then
@@ -83,6 +88,10 @@ else
         sudo ufw allow 873/tcp
         sudo ufw allow 9090/tcp
         sudo ufw allow 50000:51000/tcp
+        # RozoFS specific ports
+        sudo ufw allow 52000:52008/tcp
+        sudo ufw allow 53000:53008/tcp
+        sudo ufw allow 41001/tcp
         # NFS ports for Hammerspace integration
         sudo ufw allow 2049/tcp
         sudo ufw allow 20048/tcp

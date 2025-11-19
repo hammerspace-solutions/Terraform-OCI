@@ -256,6 +256,43 @@ if [ ${#new_hosts[@]} -gt 0 ]; then
         timeout: 10
 
     # Rocky-specific fixes for NFS and RozoFS
+    - name: Install firewalld (Rocky/RHEL)
+      dnf:
+        name: firewalld
+        state: present
+      when: ansible_os_family == "RedHat"
+
+    - name: Enable and start firewalld (Rocky/RHEL)
+      systemd:
+        name: firewalld
+        enabled: yes
+        state: started
+      when: ansible_os_family == "RedHat"
+
+    - name: Open RozoFS ports in firewall (Rocky/RHEL)
+      firewalld:
+        port: "{{ item }}"
+        permanent: yes
+        state: enabled
+        immediate: yes
+      loop:
+        - 52000-52008/tcp
+        - 53000-53008/tcp
+        - 41001/tcp
+      when: ansible_os_family == "RedHat"
+
+    - name: Open NFS ports in firewall (Rocky/RHEL)
+      firewalld:
+        port: "{{ item }}"
+        permanent: yes
+        state: enabled
+        immediate: yes
+      loop:
+        - 111/tcp
+        - 2049/tcp
+        - 20048/tcp
+      when: ansible_os_family == "RedHat"
+
     - name: Ensure rpcbind is enabled and started (Rocky/RHEL)
       systemd:
         name: rpcbind
@@ -306,44 +343,53 @@ if [ ${#new_hosts[@]} -gt 0 ]; then
       wait_for:
         timeout: 15
 
-    - name: Create RozoFS mount point for NFS export
-      file:
-        path: /mnt/rozofs/NVME
-        state: directory
-        mode: '0755'
-
-    - name: Check if RozoFS is already mounted
-      shell: mount | grep '/mnt/rozofs/NVME'
-      register: rozofs_mounted
+    # CRITICAL FIX: Clean up stale mount points to prevent rozofsmount SIGABRT
+    # The rozofs_mountpoint_check() function aborts if stale entries exist in /proc/mounts
+    - name: Kill any stale rozofsmount processes
+      shell: pkill -9 rozofsmount || true
       failed_when: false
       changed_when: false
 
-    - name: Mount RozoFS NVME export locally
+    - name: Unmount any stale RozoFS mounts (lazy unmount)
+      shell: umount -l /mnt/rozofs/NVME || true
+      failed_when: false
+      changed_when: false
+
+    - name: Remove and recreate clean mount point
       shell: |
-        rozofsmount -H ec-1/ec-2/ec-3/ec-4 -E /srv/rozofs/exports/NVME /mnt/rozofs/NVME &
+        rm -rf /mnt/rozofs/NVME
+        mkdir -p /mnt/rozofs/NVME
+        chmod 755 /mnt/rozofs/NVME
+      changed_when: true
+
+    # Use localhost-only mount for simplicity and reliability
+    # Each node mounts its own local exportd instance
+    - name: Mount RozoFS NVME export locally (localhost only)
+      shell: |
+        rozofsmount -H localhost -E /srv/rozofs/exports/NVME /mnt/rozofs/NVME &
         sleep 5
-        if mount | grep -q '/mnt/rozofs/NVME'; then
+        if df -h /mnt/rozofs/NVME 2>&1 | grep -q rozofs; then
           echo "Mount successful"
           exit 0
         else
-          echo "Mount failed or process died"
+          echo "Mount failed"
           exit 1
         fi
       args:
         executable: /bin/bash
       register: mount_result
-      retries: 3
-      delay: 5
+      retries: 2
+      delay: 3
       until: mount_result.rc == 0
-      when: rozofs_mounted.rc != 0
 
     - name: Verify RozoFS mount is accessible
-      stat:
-        path: /mnt/rozofs/NVME
-      register: rozofs_mount_check
-      retries: 3
-      delay: 5
-      until: rozofs_mount_check.stat.exists
+      command: df -h /mnt/rozofs/NVME
+      register: df_output
+      changed_when: false
+
+    - name: Display mount information
+      debug:
+        msg: "RozoFS mounted: {{ df_output.stdout_lines }}"
 
     - name: Configure NFS export for Hammerspace
       copy:
