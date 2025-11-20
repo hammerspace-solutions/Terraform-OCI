@@ -304,23 +304,27 @@ if [ ${#new_hosts[@]} -gt 0 ]; then
         state: started
       when: ansible_os_family == "RedHat"
 
-    - name: Check SELinux status
+    - name: Verify SELinux status (should be Disabled in custom image)
       command: getenforce
       register: selinux_status
       failed_when: false
       changed_when: false
       when: ansible_os_family == "RedHat"
 
-    - name: Set SELinux boolean for FUSE (if SELinux is enabled)
-      seboolean:
-        name: use_fusefs_home_dirs
-        state: yes
-        persistent: yes
+    - name: Log SELinux status
+      debug:
+        msg: "SELinux status: {{ selinux_status.stdout | default('N/A') }}"
+      when:
+        - ansible_os_family == "RedHat"
+        - selinux_status.stdout is defined
+
+    - name: Warn if SELinux is not disabled
+      debug:
+        msg: "WARNING: SELinux is {{ selinux_status.stdout }}. Expected Disabled mode in custom image."
       when:
         - ansible_os_family == "RedHat"
         - selinux_status.stdout is defined
         - selinux_status.stdout != "Disabled"
-      ignore_errors: yes
 
     # Configure NFS exports for Hammerspace integration
     - name: Set standalone mode to False for Hammerspace integration

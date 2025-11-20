@@ -102,17 +102,19 @@ else
     fi
 fi
 
-# Configure SELinux for RozoFS compatibility
-echo "Configuring SELinux for RozoFS..."
+# Verify SELinux configuration
+echo "Verifying SELinux configuration..."
 if [ "$OS_TYPE" = "oracle" ] && command -v getenforce &> /dev/null; then
-    # Check if SELinux is enabled
-    if [ "$(getenforce)" != "Disabled" ]; then
-        echo "Setting SELinux to permissive mode for RozoFS compatibility"
-        sudo setenforce 0 || true
-        sudo sed -i 's/^SELINUX=enforcing/SELINUX=permissive/' /etc/selinux/config
-        sudo sed -i 's/^SELINUX=enforcing/SELINUX=permissive/' /etc/sysconfig/selinux 2>/dev/null || true
-        echo "SELinux set to permissive mode"
+    SELINUX_STATUS=$(getenforce)
+    echo "SELinux status: $SELINUX_STATUS"
+    # Image should have SELinux already disabled
+    # If SELinux is enabled, log a warning but continue
+    if [ "$SELINUX_STATUS" = "Enforcing" ]; then
+        echo "WARNING: SELinux is in Enforcing mode. Expected Disabled mode in custom image."
+        echo "Continuing with current SELinux configuration..."
     fi
+else
+    echo "SELinux not present or not applicable for this OS"
 fi
 
 # === UNIFIED STORAGE DEVICE DETECTION ===
