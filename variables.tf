@@ -102,9 +102,19 @@ variable "ad_number" {
 }
 
 variable "fault_domain" {
-  description = "Fault domain name for instance placement (optional)"
+  description = "Fault domain name for instance placement (optional). Used for non-Anvil instances."
   type        = string
   default     = ""
+}
+
+variable "anvil_fault_domains" {
+  description = "List of fault domains for Anvil instances. First element for primary (mds0), second for secondary (mds1). Example: [\"FAULT-DOMAIN-1\", \"FAULT-DOMAIN-2\"]"
+  type        = list(string)
+  default     = []
+  validation {
+    condition     = length(var.anvil_fault_domains) == 0 || length(var.anvil_fault_domains) <= 3
+    error_message = "anvil_fault_domains must be empty or contain up to 3 fault domain names."
+  }
 }
 
 variable "assign_public_ip" {

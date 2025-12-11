@@ -445,6 +445,7 @@ module "hammerspace" {
   source = "./modules/hammerspace"
 
   common_config                 = local.common_config
+  anvil_fault_domains           = var.anvil_fault_domains
   anvil_capacity_reservation_id = null # Disabled capacity reservations
   dsx_capacity_reservation_id   = null # Disabled capacity reservations
 
