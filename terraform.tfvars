@@ -43,6 +43,10 @@ deploy_components = ["hammerspace", "storage", "ecgroup", "ansible"] # Define th
 # --- Hammerspace Configuration ---
 hammerspace_sa_anvil_destruction = true  # Allow destruction of standalone Anvil (required for terraform operations)
 
+# Anvil Fault Domains - for HA deployment across different fault domains
+# Uncomment and configure to place Anvil instances in different fault domains
+# anvil_fault_domains = ["FAULT-DOMAIN-1", "FAULT-DOMAIN-2"]  # mds0 -> FD1, mds1 -> FD2
+
 # Tell Terraform to use existing Anvil instances
 hammerspace_use_existing_anvil = false
 
