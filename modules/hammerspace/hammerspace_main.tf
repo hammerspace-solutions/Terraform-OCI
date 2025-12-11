@@ -434,8 +434,8 @@ resource "oci_core_instance" "anvil" {
     }))
   }
 
-  # Fault domain
-  fault_domain = var.common_config.fault_domain
+  # Fault domain - use per-instance fault domain if specified, otherwise fall back to common_config
+  fault_domain = length(var.anvil_fault_domains) > 0 ? element(var.anvil_fault_domains, count.index % length(var.anvil_fault_domains)) : var.common_config.fault_domain
 
   # Capacity reservation
   capacity_reservation_id = var.anvil_capacity_reservation_id

@@ -40,6 +40,12 @@ variable "common_config" {
   })
 }
 
+variable "anvil_fault_domains" {
+  description = "List of fault domains for Anvil instances. First element for primary (mds0), second for secondary (mds1). Example: [\"FAULT-DOMAIN-1\", \"FAULT-DOMAIN-2\"]"
+  type        = list(string)
+  default     = []
+}
+
 variable "anvil_capacity_reservation_id" {
   description = "The OCID of the Compute Capacity Reservation to target for Anvil nodes."
   type        = string
