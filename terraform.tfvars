@@ -120,6 +120,7 @@ hammerspace_anvil_meta_disk_size       = 200  # Smaller for testing
 hammerspace_anvil_meta_disk_type       = "paravirtualized"
 hammerspace_anvil_meta_disk_iops       = null
 hammerspace_anvil_meta_disk_throughput = null
+hammerspace_anvil_enable_sriov            = false 
 
 
 hammerspace_dsx_instance_shape          = "VM.Standard.E2.8"
@@ -132,6 +133,7 @@ hammerspace_dsx_block_volume_iops       = null
 hammerspace_dsx_block_volume_throughput = null
 hammerspace_dsx_block_volume_count      = 1
 hammerspace_dsx_add_vols                = true
+hammerspace_dsx_enable_sriov            = false 
 
 ecgroup_node_count                 = 4
 ecgroup_image_id                = "ocid1.image.oc1.us-sanjose-1.aaaaaaaapah7sttqniy7ppbladubs7g6cecnf2m3abkq2av777qvivlqhd2a" # Debian ssh -i ssh_keys/ansible_admin_key debian@192.9.231.97   
