@@ -139,6 +139,18 @@ variable "dsx_count" {
   default     = 1
 }
 
+variable "anvil_enable_sriov" {
+  description = "Enable SR-IOV (VFIO) networking for Anvil instances."
+  type        = bool
+  default     = false
+}
+
+variable "dsx_enable_sriov" {
+  description = "Enable SR-IOV (VFIO) networking for DSX instances."
+  type        = bool
+  default     = false
+}
+
 variable "anvil_meta_disk_size" {
   description = "Anvil Metadata Disk Size in GB."
   type        = number

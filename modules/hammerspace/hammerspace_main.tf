@@ -457,7 +457,7 @@ resource "oci_core_instance" "anvil" {
   preserve_data_volumes_created_at_launch = false
   launch_options {
     boot_volume_type = "PARAVIRTUALIZED"
-    network_type     = "PARAVIRTUALIZED"
+    network_type     = var.anvil_enable_sriov ? "VFIO" : "PARAVIRTUALIZED"
     firmware         = "BIOS"
   }
 
@@ -630,7 +630,7 @@ resource "oci_core_instance" "dsx" {
   preserve_data_volumes_created_at_launch = false
   launch_options {
     boot_volume_type = "PARAVIRTUALIZED"
-    network_type     = "PARAVIRTUALIZED"
+    network_type     = var.dsx_enable_sriov ? "VFIO" : "PARAVIRTUALIZED"
     firmware         = "BIOS"
   }
   depends_on = [oci_core_instance.anvil, oci_core_private_ip.cluster_ip, oci_core_network_security_group.dsx_nsg]
