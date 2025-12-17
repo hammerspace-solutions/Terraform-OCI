@@ -463,6 +463,7 @@ module "hammerspace" {
   anvil_meta_disk_type       = var.hammerspace_anvil_meta_disk_type
   anvil_meta_disk_iops       = var.hammerspace_anvil_meta_disk_iops
   anvil_meta_disk_throughput = var.hammerspace_anvil_meta_disk_throughput
+  anvil_enable_sriov         = var.hammerspace_anvil_enable_sriov
 
   dsx_count                   = var.hammerspace_dsx_count
   dsx_shape                   = var.hammerspace_dsx_instance_shape
@@ -474,6 +475,7 @@ module "hammerspace" {
   dsx_block_volume_throughput = var.hammerspace_dsx_block_volume_throughput
   dsx_block_volume_count      = var.hammerspace_dsx_block_volume_count
   dsx_add_vols                = var.hammerspace_dsx_add_vols
+  dsx_enable_sriov            = var.hammerspace_dsx_enable_sriov
   
   # Network interface names (auto-detected based on shape if not specified)
   anvil_network_interface_name = ""

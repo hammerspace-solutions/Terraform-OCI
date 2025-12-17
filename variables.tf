@@ -462,6 +462,18 @@ variable "hammerspace_dsx_count" {
   default     = 1
 }
 
+variable "hammerspace_anvil_enable_sriov" {
+  description = "Enable SR-IOV (VFIO) networking for Anvil instances. Requires compatible shape and image."
+  type        = bool
+  default     = false
+}
+
+variable "hammerspace_dsx_enable_sriov" {
+  description = "Enable SR-IOV (VFIO) networking for DSX instances. Requires compatible shape and image."
+  type        = bool
+  default     = false
+}
+
 variable "hammerspace_anvil_meta_disk_size" {
   description = "Metadata disk size in GB for Anvil"
   type        = number
