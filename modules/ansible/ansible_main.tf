@@ -368,7 +368,7 @@ EOF
 resource "null_resource" "upload_fixed_scripts" {
   count = var.instance_count
 
-  # Trigger on instance changes or script file changes
+  # Trigger on instance changes, script file changes, OR node changes (storage/ecgroup)
   triggers = {
     instance_id = oci_core_instance.this[count.index].id
     scripts_hash = join(",", [
@@ -378,6 +378,13 @@ resource "null_resource" "upload_fixed_scripts" {
       : filemd5("${path.module}/ansible_job_files/${script}")
     ])
     main_config_hash = filemd5("${path.module}/../../templates/ansible_config_main.sh")
+    # Trigger when storage servers or ECGroup nodes are added/removed
+    storage_instances_hash = sha256(jsonencode(var.storage_instances))
+    ecgroup_nodes_hash     = sha256(join(",", var.ecgroup_nodes))
+    ecgroup_instances_hash = sha256(join(",", var.ecgroup_instances))
+    # Also trigger on configuration changes
+    ecgroup_add_to_hs      = var.ecgroup_add_to_hammerspace
+    add_storage_volumes    = var.add_storage_server_volumes
   }
 
   # Upload main configuration script and ansible job scripts
@@ -437,13 +444,78 @@ resource "null_resource" "upload_fixed_scripts" {
             "sudo mv /tmp/$script /usr/local/ansible/jobs/$script && sudo chmod +x /usr/local/ansible/jobs/$script"
       done
 
-      # Execute main configuration script
+      # Update inventory file with current node information
+      # This ensures new storage servers or ECGroup nodes are picked up
+      echo "Updating inventory with current node information..."
+      ssh -i ${var.common_config.ssh_keys_dir}/ansible_admin_key \
+          -o StrictHostKeyChecking=no \
+          -o UserKnownHostsFile=/dev/null \
+          ubuntu@${oci_core_instance.this[count.index].public_ip} \
+          "sudo bash -c 'cat > /var/ansible/trigger/inventory.ini' << 'INVENTORY_EOF'
+[all:vars]
+hs_username = admin
+hs_password = ${var.admin_user_password}
+volume_group_name = ${var.volume_group_name}
+share_name = ${var.share_name}
+ecgroup_add_to_hammerspace = ${var.ecgroup_add_to_hammerspace}
+ecgroup_volume_group_name = ${var.ecgroup_volume_group_name}
+ecgroup_share_name = ${var.ecgroup_share_name}
+add_storage_server_volumes = ${var.add_storage_server_volumes}
+add_ecgroup_volumes = ${var.add_ecgroup_volumes}
+ecgroup_metadata_array = ${var.ecgroup_metadata_array}
+ecgroup_storage_array = ${var.ecgroup_storage_array}
+
+[hammerspace]
+${length(var.mgmt_ip) > 0 ? var.mgmt_ip[0] : ""}
+
+[storage_servers]
+%{for storage in var.storage_instances~}
+${storage.private_ip} node_name=\"${storage.name}\" ansible_user=${var.target_user}
+%{endfor~}
+
+[ecgroup_nodes]
+%{for i, ip in var.ecgroup_nodes~}
+${ip} node_name=\"${length(var.ecgroup_instances) > i ? var.ecgroup_instances[i] : "ecgroup-${i}"}\" ansible_user=rocky
+%{endfor~}
+
+[all:children]
+hammerspace
+storage_servers
+ecgroup_nodes
+INVENTORY_EOF"
+
+      # Update environment variables file for the configuration script
+      # This ensures ansible_config_main.sh has access to current node information
+      echo "Updating environment variables..."
+      ssh -i ${var.common_config.ssh_keys_dir}/ansible_admin_key \
+          -o StrictHostKeyChecking=no \
+          -o UserKnownHostsFile=/dev/null \
+          ubuntu@${oci_core_instance.this[count.index].public_ip} \
+          "sudo bash -c 'cat > /var/ansible/trigger/deploy_vars.env' << 'ENV_EOF'
+export MGMT_IP=\"${length(var.mgmt_ip) > 0 ? var.mgmt_ip[0] : ""}\"
+export STORAGE_INSTANCES='${jsonencode(var.storage_instances)}'
+export ECGROUP_INSTANCES=\"${join(" ", var.ecgroup_instances)}\"
+export ECGROUP_NODES=\"${join(" ", var.ecgroup_nodes)}\"
+export ECGROUP_METADATA_ARRAY=\"${var.ecgroup_metadata_array}\"
+export ECGROUP_STORAGE_ARRAY=\"${var.ecgroup_storage_array}\"
+export ECGROUP_ADD_TO_HAMMERSPACE=\"${var.ecgroup_add_to_hammerspace}\"
+export ADD_STORAGE_SERVER_VOLUMES=\"${var.add_storage_server_volumes}\"
+export ADD_ECGROUP_VOLUMES=\"${var.add_ecgroup_volumes}\"
+export VG_NAME=\"${var.volume_group_name}\"
+export SHARE_NAME=\"${var.share_name}\"
+export ECGROUP_VG_NAME=\"${var.ecgroup_volume_group_name}\"
+export ECGROUP_SHARE_NAME=\"${var.ecgroup_share_name}\"
+export ADMIN_USER_PASSWORD=\"${var.admin_user_password}\"
+export TARGET_USER=\"${var.target_user}\"
+ENV_EOF"
+
+      # Execute main configuration script with updated environment
       echo "Executing main configuration script..."
       ssh -i ${var.common_config.ssh_keys_dir}/ansible_admin_key \
           -o StrictHostKeyChecking=no \
           -o UserKnownHostsFile=/dev/null \
           ubuntu@${oci_core_instance.this[count.index].public_ip} \
-          "sudo bash /tmp/ansible_config_main.sh 2>&1 | sudo tee /var/log/ansible_main_config.log"
+          "sudo bash -c 'source /var/ansible/trigger/deploy_vars.env 2>/dev/null || true; bash /tmp/ansible_config_main.sh' 2>&1 | sudo tee /var/log/ansible_main_config.log"
 
       echo "Configuration complete - check /var/log/ansible_main_config.log for details"
     EOT
