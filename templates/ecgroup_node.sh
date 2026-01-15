@@ -201,6 +201,11 @@ echo "Admin user created: admin"
 if [ "$OS_TYPE" = "oracle" ]; then
     sudo $PKG_MGR -y upgrade --nobest --nogpgcheck || true
     sudo $PKG_MGR clean all
+
+    # Install DRBD kernel module from ELRepo (utils already in ECGroup image)
+    echo "Installing DRBD kernel module from ELRepo..."
+    sudo $PKG_MGR install -y https://www.elrepo.org/elrepo-release-9.el9.elrepo.noarch.rpm || true
+    sudo $PKG_MGR install -y kmod-drbd9x --enablerepo=elrepo || true
 else
     sudo apt-get -y upgrade
     sudo apt-get autoremove -y
