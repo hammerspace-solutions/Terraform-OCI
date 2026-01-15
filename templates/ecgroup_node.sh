@@ -208,3 +208,21 @@ else
 fi
 
 echo "OCI ECGroup node setup complete. System ready for ECGroup installation."
+
+# Check if a reboot is needed (kernel upgrade)
+# Compare running kernel with latest installed kernel
+if [ "$OS_TYPE" = "oracle" ]; then
+    RUNNING_KERNEL=$(uname -r)
+    LATEST_KERNEL=$(rpm -q kernel --queryformat '%{VERSION}-%{RELEASE}.%{ARCH}\n' | sort -V | tail -1)
+
+    echo "Running kernel: $RUNNING_KERNEL"
+    echo "Latest installed kernel: $LATEST_KERNEL"
+
+    if [ "$RUNNING_KERNEL" != "$LATEST_KERNEL" ]; then
+        echo "Kernel upgrade detected. Rebooting to load new kernel for DRBD compatibility..."
+        echo "Reboot initiated at $(date)" | sudo tee /var/log/ecgroup-reboot.log
+        sudo reboot
+    else
+        echo "Kernel is up to date. No reboot needed."
+    fi
+fi
