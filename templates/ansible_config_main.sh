@@ -460,7 +460,12 @@ if [ -n "${ECGROUP_INSTANCES}" ]; then
     fi
 fi
 
-if [ -n "${MGMT_IP}" ]; then
+# Only run storage server jobs if ADD_STORAGE_SERVER_VOLUMES is true and we have storage servers
+if [ -n "${MGMT_IP}" ] && [ "${ADD_STORAGE_SERVER_VOLUMES}" = "true" ] && [ "$STORAGE_COUNT" -gt 0 ]; then
+    echo "=========================================="
+    echo "Configuring Storage Servers..."
+    echo "=========================================="
+
     run_ansible_job "30-add-storage-nodes.sh" || echo "WARNING: Storage node addition failed, check logs"
 
     # Wait for storage nodes to fully initialize their volumes before adding them
@@ -525,9 +530,29 @@ if [ -n "${MGMT_IP}" ]; then
     run_ansible_job "32-add-storage-volumes.sh" || echo "WARNING: Storage volume addition failed"
     run_ansible_job "33-add-storage-volume-group.sh" || echo "WARNING: Storage volume group creation failed"
     run_ansible_job "34-create-storage-share.sh" || echo "WARNING: Storage share creation failed"
+elif [ -n "${MGMT_IP}" ]; then
+    echo "=========================================="
+    echo "Skipping Storage Server configuration (not enabled or no storage servers)"
+    echo "  ADD_STORAGE_SERVER_VOLUMES=${ADD_STORAGE_SERVER_VOLUMES}"
+    echo "  STORAGE_COUNT=${STORAGE_COUNT}"
+    echo "=========================================="
+fi
+
+# Only run ECGroup jobs if ECGROUP_ADD_TO_HAMMERSPACE is true and we have ECGroup nodes
+if [ -n "${MGMT_IP}" ] && [ "${ECGROUP_ADD_TO_HAMMERSPACE}" = "true" ] && [ -n "${ECGROUP_INSTANCES}" ]; then
+    echo "=========================================="
+    echo "Configuring ECGroup integration with Hammerspace..."
+    echo "=========================================="
+
     run_ansible_job "35-add-ecgroup-volumes.sh" || echo "WARNING: ECGroup volume addition failed"
     run_ansible_job "36-add-ecgroup-volume-group.sh" || echo "WARNING: ECGroup volume group creation failed"
     run_ansible_job "37-create-ecgroup-share.sh" || echo "WARNING: ECGroup share creation failed"
+elif [ -n "${MGMT_IP}" ]; then
+    echo "=========================================="
+    echo "Skipping ECGroup Hammerspace integration (not enabled or no ECGroup nodes)"
+    echo "  ECGROUP_ADD_TO_HAMMERSPACE=${ECGROUP_ADD_TO_HAMMERSPACE}"
+    echo "  ECGROUP_INSTANCES=${ECGROUP_INSTANCES}"
+    echo "=========================================="
 fi
 
 # Print execution summary
