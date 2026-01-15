@@ -450,6 +450,8 @@ module "hammerspace" {
   dsx_capacity_reservation_id   = null # Disabled capacity reservations
 
   image_id                = var.hammerspace_image_id
+  anvil_image_id          = var.hammerspace_anvil_image_id
+  dsx_image_id            = var.hammerspace_dsx_image_id
   profile_id              = var.hammerspace_profile_id
   anvil_security_group_id = var.hammerspace_anvil_security_group_id
   dsx_security_group_id   = var.hammerspace_dsx_security_group_id
@@ -483,6 +485,7 @@ module "hammerspace" {
 
   api_key             = var.api_key
   config_file         = var.config_file
+  oci_cli_rc          = var.oci_cli_rc
   admin_user_password = var.admin_user_password
   nat_gateway_id      = local.effective_nat_gateway_id
   
@@ -568,11 +571,12 @@ module "ansible" {
   target_user                = var.ansible_target_user
   volume_group_name          = var.volume_group_name
   share_name                 = var.share_name
-  ecgroup_add_to_hammerspace = var.ecgroup_add_to_hammerspace
+  # ECGroup/Storage configuration - only enable if component is in deploy_components
+  ecgroup_add_to_hammerspace = local.deploy_ecgroup && var.ecgroup_add_to_hammerspace
   ecgroup_volume_group_name  = var.ecgroup_volume_group_name
   ecgroup_share_name         = var.ecgroup_share_name
-  add_storage_server_volumes = var.add_storage_server_volumes
-  add_ecgroup_volumes        = var.add_ecgroup_volumes
+  add_storage_server_volumes = local.deploy_storage && var.add_storage_server_volumes
+  add_ecgroup_volumes        = local.deploy_ecgroup && var.add_ecgroup_volumes
   capacity_reservation_id    = null # Disabled capacity reservations
 
   depends_on = [
