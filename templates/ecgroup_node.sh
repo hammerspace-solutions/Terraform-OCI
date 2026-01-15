@@ -27,9 +27,11 @@ else
 fi
 
 # Update system packages
+# Note: ECGroup images have CTDB pre-installed which depends on specific samba versions
+# Use --nobest to skip packages with dependency conflicts, --nogpgcheck for SHA1 GPG key issues
 echo "Updating system packages..."
 if [ "$OS_TYPE" = "oracle" ]; then
-    sudo $PKG_MGR -y update
+    sudo $PKG_MGR -y update --nobest --nogpgcheck
     sudo $PKG_MGR -y install epel-release || true
     sudo $PKG_MGR -y install net-tools wget curl bind-utils
 else
@@ -195,8 +197,9 @@ echo "Target user: $TARGET_USER"
 echo "Admin user created: admin"
 
 # Final system update and cleanup
+# Use --nobest to skip packages with dependency conflicts, --nogpgcheck for SHA1 GPG key issues
 if [ "$OS_TYPE" = "oracle" ]; then
-    sudo $PKG_MGR -y upgrade
+    sudo $PKG_MGR -y upgrade --nobest --nogpgcheck || true
     sudo $PKG_MGR clean all
 else
     sudo apt-get -y upgrade

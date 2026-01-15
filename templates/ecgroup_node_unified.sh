@@ -28,9 +28,11 @@ else
 fi
 
 # Update system packages
+# Note: ECGroup images have CTDB pre-installed which depends on specific samba versions
+# Use --nobest to skip packages with dependency conflicts, --nogpgcheck for SHA1 GPG key issues
 echo "Updating system packages..."
 if [ "$OS_TYPE" = "oracle" ]; then
-    sudo $PKG_MGR -y update
+    sudo $PKG_MGR -y update --nobest --nogpgcheck
     sudo $PKG_MGR -y install epel-release || true
     sudo $PKG_MGR -y install net-tools wget curl bind-utils nvme-cli lvm2 parted nfs-utils
 else
@@ -266,8 +268,9 @@ echo "Storage type detected: $STORAGE_TYPE"
 echo "Total storage devices: ${#ALL_STORAGE_DEVICES[@]}"
 
 # Final system update and cleanup
+# Use --nobest to skip packages with dependency conflicts, --nogpgcheck for SHA1 GPG key issues
 if [ "$OS_TYPE" = "oracle" ]; then
-    sudo $PKG_MGR -y upgrade
+    sudo $PKG_MGR -y upgrade --nobest --nogpgcheck || true
     sudo $PKG_MGR clean all
 else
     sudo apt-get -y upgrade
