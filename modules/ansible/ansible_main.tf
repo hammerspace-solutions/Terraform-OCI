@@ -406,6 +406,29 @@ resource "null_resource" "upload_fixed_scripts" {
         sleep 10
       done
 
+      # Ensure required directories exist (safety check in case bootstrap partially failed)
+      echo "Ensuring required directories exist..."
+      ssh -i ${var.common_config.ssh_keys_dir}/ansible_admin_key \
+          -o StrictHostKeyChecking=no \
+          -o UserKnownHostsFile=/dev/null \
+          ubuntu@${oci_core_instance.this[count.index].public_ip} \
+          "sudo mkdir -p /usr/local/ansible/jobs /usr/local/lib /var/run/ansible_jobs_status /var/ansible/trigger /var/log/ansible_jobs"
+
+      # Configure SSH for ECGroup connectivity (rocky user on private IPs)
+      echo "Configuring SSH for ECGroup connectivity..."
+      ssh -i ${var.common_config.ssh_keys_dir}/ansible_admin_key \
+          -o StrictHostKeyChecking=no \
+          -o UserKnownHostsFile=/dev/null \
+          ubuntu@${oci_core_instance.this[count.index].public_ip} \
+          "cat >> ~/.ssh/config << 'SSHEOF'
+Host 10.0.*
+    User rocky
+    IdentityFile ~/.ssh/ansible_admin_key
+    StrictHostKeyChecking no
+    UserKnownHostsFile /dev/null
+SSHEOF
+chmod 600 ~/.ssh/config 2>/dev/null || true"
+
       # Upload main configuration script
       echo "Uploading main configuration script..."
       scp -i ${var.common_config.ssh_keys_dir}/ansible_admin_key \
