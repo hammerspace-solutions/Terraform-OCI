@@ -133,6 +133,9 @@ ALL_STORAGE_DEVICES=()
 
 # Detect local NVMe drives (DenseIO shapes)
 echo "Scanning for local NVMe drives..."
+# Temporarily disable failglob for device detection (devices may not exist)
+shopt -u failglob
+shopt -s nullglob
 for dev in /dev/nvme[0-9]n[0-9]; do
     if [ -b "$dev" ]; then
         # Check if it's NOT the boot device
@@ -160,6 +163,9 @@ for dev in /dev/sd[b-z] /dev/oracleoci/oraclevd[b-z]; do
         fi
     fi
 done
+# Restore failglob after device detection
+shopt -s failglob
+shopt -u nullglob
 
 # Save device information for RozoFS
 echo "Saving detected devices to /etc/rozofs/available_devices.txt..."
