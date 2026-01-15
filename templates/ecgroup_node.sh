@@ -33,10 +33,10 @@ echo "Updating system packages..."
 if [ "$OS_TYPE" = "oracle" ]; then
     sudo $PKG_MGR -y update --nobest --nogpgcheck
     sudo $PKG_MGR -y install epel-release || true
-    sudo $PKG_MGR -y install net-tools wget curl bind-utils
+    sudo $PKG_MGR -y install net-tools wget curl bind-utils bc
 else
     sudo apt-get -y update
-    sudo apt-get -y install net-tools wget curl dnsutils
+    sudo apt-get -y install net-tools wget curl dnsutils bc
 fi
 
 # Configure SSH settings for OCI

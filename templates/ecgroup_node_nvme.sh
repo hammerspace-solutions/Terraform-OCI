@@ -33,10 +33,10 @@ echo "Updating system packages..."
 if [ "$OS_TYPE" = "oracle" ]; then
     sudo $PKG_MGR -y update --nobest --nogpgcheck
     sudo $PKG_MGR -y install epel-release || true
-    sudo $PKG_MGR -y install net-tools wget curl bind-utils nvme-cli lvm2
+    sudo $PKG_MGR -y install net-tools wget curl bind-utils nvme-cli lvm2 bc
 else
     sudo apt-get -y update
-    sudo apt-get -y install net-tools wget curl dnsutils nvme-cli lvm2
+    sudo apt-get -y install net-tools wget curl dnsutils nvme-cli lvm2 bc
 fi
 
 # Configure SSH settings for OCI
