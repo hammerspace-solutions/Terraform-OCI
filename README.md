@@ -1,4 +1,4 @@
-# Terraform-OCI-SplitFD
+# Terraform-OCI
 
 Terraform infrastructure-as-code for deploying Hammerspace Global Data Environment on Oracle Cloud Infrastructure (OCI).
 
