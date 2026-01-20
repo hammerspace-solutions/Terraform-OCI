@@ -178,6 +178,43 @@ variable "ecgroup_share_name" {
   default     = ""
 }
 
+variable "ecgroup_share_path" {
+  description = "Internal path for ECGroup share in Hammerspace"
+  type        = string
+  default     = "/ecgroup"
+}
+
+variable "ecgroup_share_export_path" {
+  description = "Export path for ECGroup share (NFS mount path)"
+  type        = string
+  default     = "/ecgroup"
+}
+
+variable "ecgroup_share_description" {
+  description = "Description for ECGroup share"
+  type        = string
+  default     = "ECGroup share"
+}
+
+# Storage Server Share Configuration
+variable "share_path" {
+  description = "Internal path for storage share in Hammerspace"
+  type        = string
+  default     = "/hammerspace"
+}
+
+variable "share_export_path" {
+  description = "Export path for storage share (NFS mount path)"
+  type        = string
+  default     = "/hammerspace"
+}
+
+variable "share_description" {
+  description = "Description for storage share"
+  type        = string
+  default     = "Hammerspace share"
+}
+
 variable "add_storage_server_volumes" {
   description = "Whether to add storage server volumes to Hammerspace"
   type        = bool

@@ -28,29 +28,44 @@ if [ ! -f "$INVENTORY_FILE" ]; then
   exit 1
 fi
 
-# 2. Get the username, password, volume group, and share name from the inventroy
+# 2. Get the username, password, volume group, and share configuration from the inventory
 
 hs_username=$(awk '/^\[all:vars\]$/{flag=1; next} /^\[.*\]$/{flag=0} flag && /^hs_username = / {sub(/.*= /, ""); print; exit}' "$INVENTORY_FILE")
 hs_password=$(awk '/^\[all:vars\]$/{flag=1; next} /^\[.*\]$/{flag=0} flag && /^hs_password = / {sub(/.*= /, ""); print; exit}' "$INVENTORY_FILE")
 volume_group_name=$(awk '/^\[all:vars\]$/{flag=1; next} /^\[.*\]$/{flag=0} flag && /^volume_group_name = / {sub(/.*= /, ""); print; exit}' "$INVENTORY_FILE")
 share_name=$(awk '/^\[all:vars\]$/{flag=1; next} /^\[.*\]$/{flag=0} flag && /^share_name = / {sub(/.*= /, ""); print; exit}' "$INVENTORY_FILE")
+share_path=$(awk '/^\[all:vars\]$/{flag=1; next} /^\[.*\]$/{flag=0} flag && /^share_path = / {sub(/.*= /, ""); print; exit}' "$INVENTORY_FILE")
+share_export_path=$(awk '/^\[all:vars\]$/{flag=1; next} /^\[.*\]$/{flag=0} flag && /^share_export_path = / {sub(/.*= /, ""); print; exit}' "$INVENTORY_FILE")
+share_description=$(awk '/^\[all:vars\]$/{flag=1; next} /^\[.*\]$/{flag=0} flag && /^share_description = / {sub(/.*= /, ""); print; exit}' "$INVENTORY_FILE")
+
+# Set defaults if not provided
+share_path="${share_path:-/$share_name}"
+share_export_path="${share_export_path:-/$share_name}"
+share_description="${share_description:-Hammerspace share}"
 
 # Debug: Echo parsed vars
 echo "Parsed hs_username: $hs_username"
 echo "Parsed hs_password: [REDACTED]"
 echo "Parsed volume_group_name: $volume_group_name"
 echo "Parsed share_name: $share_name"
+echo "Parsed share_path: $share_path"
+echo "Parsed share_export_path: $share_export_path"
+echo "Parsed share_description: $share_description"
 
 # Set variables for later use
-
 HS_USERNAME=$hs_username
 HS_PASSWORD=$hs_password
 HS_VOLUME_GROUP=$volume_group_name
 HS_SHARE_NAME=$share_name
+HS_SHARE_PATH=$share_path
+HS_EXPORT_PATH=$share_export_path
+HS_SHARE_DESC=$share_description
 
 SHARE_BODY='{'
 SHARE_BODY+='"name": "'$HS_SHARE_NAME'",'
-SHARE_BODY+='"path": "/'$HS_SHARE_NAME'",'
+SHARE_BODY+='"path": "'$HS_SHARE_PATH'",'
+SHARE_BODY+='"exportPath": "'$HS_EXPORT_PATH'",'
+SHARE_BODY+='"comment": "'$HS_SHARE_DESC'",'
 SHARE_BODY+='"maxShareSize": "0",'
 SHARE_BODY+='"alertThreshold": "90",'
 SHARE_BODY+='"maxShareSizeType": "TB",'

@@ -142,10 +142,13 @@ ecgroup_storage_volume_throughput = null
 ecgroup_user_data = "./templates/ecgroup_node_unified.sh"
 
 # Hammerspace integration - auto-add ECGroup storage to Hammerspace
-ecgroup_add_to_hammerspace = true
-ecgroup_volume_group_name  = "ecgroup-vg"
-ecgroup_share_name         = "ecgroup-share"
-add_ecgroup_volumes        = true
+ecgroup_add_to_hammerspace  = true
+ecgroup_volume_group_name   = "ecgroup-vg"
+ecgroup_share_name          = "ecgroup-share"
+ecgroup_share_path          = "/ecgroup"
+ecgroup_share_export_path   = "/ecgroup"
+ecgroup_share_description   = "ECGroup share"
+add_ecgroup_volumes         = true
 
 #=============================================================================
 # STORAGE SERVERS
@@ -176,6 +179,9 @@ storage_target_user = "ubuntu"
 add_storage_server_volumes = true
 volume_group_name          = "storage-vg"
 share_name                 = "storage-share"
+share_path                 = "/hammerspace"
+share_export_path          = "/hammerspace"
+share_description          = "Hammerspace share"
 
 #=============================================================================
 # ANSIBLE CONTROLLER

@@ -654,10 +654,16 @@ module "ansible" {
   target_user                = var.ansible_target_user
   volume_group_name          = var.volume_group_name
   share_name                 = var.share_name
+  share_path                 = var.share_path
+  share_export_path          = var.share_export_path
+  share_description          = var.share_description
   # ECGroup/Storage configuration - only enable if component is in deploy_components
   ecgroup_add_to_hammerspace = local.deploy_ecgroup && var.ecgroup_add_to_hammerspace
   ecgroup_volume_group_name  = var.ecgroup_volume_group_name
   ecgroup_share_name         = var.ecgroup_share_name
+  ecgroup_share_path         = var.ecgroup_share_path
+  ecgroup_share_export_path  = var.ecgroup_share_export_path
+  ecgroup_share_description  = var.ecgroup_share_description
   add_storage_server_volumes = local.deploy_storage && var.add_storage_server_volumes
   add_ecgroup_volumes        = local.deploy_ecgroup && var.add_ecgroup_volumes
   capacity_reservation_id    = null # Disabled capacity reservations
