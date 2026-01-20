@@ -1,4 +1,4 @@
-# Terraform-OCI
+# Terraform-OCI-SplitFD
 
 Terraform infrastructure-as-code for deploying Hammerspace Global Data Environment on Oracle Cloud Infrastructure (OCI).
 
@@ -160,12 +160,14 @@ hammerspace_dsx_count   = 0
 # Initialize Terraform
 terraform init
 
-# Review the plan
+# Review the plan (pre-flight validation runs here)
 terraform plan
 
 # Apply the configuration
 terraform apply
 ```
+
+> **Note**: Pre-flight validation checks run during `terraform plan` and will catch configuration errors (invalid images, unavailable shapes, missing existing infrastructure details) before any resources are created.
 
 ### 4. Access Hammerspace
 
@@ -409,6 +411,33 @@ The Ansible module monitors these attributes for changes:
 | `ecgroup_add_to_hs` | ECGroup Hammerspace integration flag |
 | `add_storage_volumes` | Storage server volumes flag |
 
+### Ansible Job Scripts
+
+The Ansible controller runs these scripts to configure storage integration:
+
+| Script | Function | Key Features |
+|--------|----------|--------------|
+| `32-add-storage-volumes.sh` | Adds block volumes to Hammerspace | platformServices discovery wait, retry logic |
+| `33-add-storage-volume-group.sh` | Creates/updates volume groups | Auto-update existing VGs with new nodes |
+| `34-create-storage-share.sh` | Creates NFS shares | Conditional volume group objectives |
+
+### Automation Features
+
+#### platformServices Discovery
+
+When storage volumes are added, Hammerspace needs time to discover NFS exports on storage nodes. The automation includes:
+- Initial check for nodes with discovered platformServices
+- Automatic retry with up to 20 retries, 15-second intervals
+- Prevents volume addition failures due to timing issues
+
+#### Volume Group Auto-Update
+
+When adding new storage servers to an existing deployment:
+- Existing volume group is fetched via REST API
+- New node locations are merged with existing configuration
+- PUT request preserves all required fields (`uoid`, `internalId`, etc.)
+- No manual intervention required
+
 ### What Gets Re-Configured
 
 When changes are detected:
@@ -448,6 +477,56 @@ This includes:
 - Automatic node detection & configuration
 - Phased deployment scenarios
 - Security settings
+- **Pre-flight validation checks**
+
+## Pre-flight Validation
+
+This Terraform configuration includes comprehensive pre-flight validation checks that catch configuration errors early, during `terraform plan`, before any resources are created.
+
+### What Gets Validated
+
+| Category | Checks Performed |
+|----------|------------------|
+| **Networking** | VCN exists, subnet belongs to VCN, network config valid, NAT gateway configured for HA |
+| **Instance Shapes** | All shapes (Anvil, DSX, Client, Storage, ECGroup, Ansible, Bastion) available in selected AD |
+| **Images** | All image OCIDs exist in the region |
+| **Existing Infrastructure** | Anvil IPs and password provided when using existing, DSX IPs provided when using existing |
+| **Dependencies** | DSX deployment requires an Anvil (new or existing) |
+
+### Example Validation Errors
+
+**Missing existing Anvil configuration:**
+```
+Error: Invalid existing Anvil configuration:
+
+When hammerspace_use_existing_anvil = true, you must provide:
+  - hammerspace_existing_anvil_ips (list of IP addresses)
+  - hammerspace_existing_anvil_password (admin password)
+```
+
+**Shape not available in AD:**
+```
+Error: The specified Anvil instance shape (VM.Standard.E5.Flex) is not available
+in the selected Availability Domain (AD-1).
+```
+
+**DSX without Anvil:**
+```
+Error: Invalid Hammerspace configuration:
+
+DSX nodes require an Anvil metadata server. You must either:
+  - Set hammerspace_anvil_count > 0 to deploy new Anvil(s)
+  - Set hammerspace_use_existing_anvil = true with existing Anvil IPs
+```
+
+### Benefits
+
+- **Early error detection** - Errors caught at `plan` time, not during resource creation
+- **Clear error messages** - Descriptive messages explain exactly what's wrong
+- **No wasted resources** - Avoid partial deployments due to invalid configuration
+- **Faster iteration** - Fix issues before waiting for provisioning
+
+---
 
 ## Troubleshooting
 
@@ -529,7 +608,7 @@ terraform destroy -target=module.hammerspace
 
 ## License
 
-Copyright (c) 2025 Hammerspace, Inc
+Copyright (c) 2025-2026 Hammerspace, Inc
 
 MIT License - See LICENSE file for details.
 

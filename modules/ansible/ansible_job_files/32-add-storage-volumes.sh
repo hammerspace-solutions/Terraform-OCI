@@ -134,26 +134,78 @@ cat > "$tmp_playbook" <<EOF
     ecgroup_add_to_hammerspace: $ecgroup_add_to_hammerspace
 
   tasks:
-    - name: Get all nodes
-      uri:
-        url: "https://{{ data_cluster_mgmt_ip }}:8443/mgmt/v1.2/rest/nodes"
-        method: GET
-        user: "{{ hs_username }}"
-        password: "{{ hs_password }}"
-        force_basic_auth: true
-        validate_certs: false
-        return_content: true
-        status_code: 200
-        body_format: json
-        timeout: 30
-      register: nodes_response
-      until: nodes_response.status == 200
-      retries: 60
-      delay: 30
+    - name: Wait for platformServices discovery on all OTHER nodes
+      block:
+        - name: Get all nodes
+          uri:
+            url: "https://{{ data_cluster_mgmt_ip }}:8443/mgmt/v1.2/rest/nodes"
+            method: GET
+            user: "{{ hs_username }}"
+            password: "{{ hs_password }}"
+            force_basic_auth: true
+            validate_certs: false
+            return_content: true
+            status_code: 200
+            body_format: json
+            timeout: 30
+          register: nodes_response
 
-    - name: Filter OTHER nodes
-      set_fact:
-        other_nodes: "{{ nodes_response.json | selectattr('nodeType', 'equalto', 'OTHER') | list }}"
+        - name: Filter OTHER nodes (exclude ECGroup nodes)
+          set_fact:
+            other_nodes: "{{ nodes_response.json | selectattr('nodeType', 'equalto', 'OTHER') | rejectattr('name', 'match', '(?i).*ecgroup.*') | rejectattr('name', 'match', '(?i).*ecg-.*') | list }}"
+
+        - name: Count nodes with discovered platformServices
+          set_fact:
+            nodes_with_services: "{{ other_nodes | selectattr('platformServices', 'defined') | selectattr('platformServices') | list | length }}"
+            total_other_nodes: "{{ other_nodes | length }}"
+
+        - name: Debug - Discovery status
+          debug:
+            msg: "{{ nodes_with_services }}/{{ total_other_nodes }} OTHER nodes have platformServices discovered"
+
+        - name: Fail if not all nodes have platformServices (will retry)
+          fail:
+            msg: "Waiting for platformServices discovery on all nodes..."
+          when: nodes_with_services | int < total_other_nodes | int and total_other_nodes | int > 0
+
+      rescue:
+        - name: Wait before retry
+          pause:
+            seconds: 15
+
+        - name: Retry - Get all nodes with platformServices discovery wait
+          uri:
+            url: "https://{{ data_cluster_mgmt_ip }}:8443/mgmt/v1.2/rest/nodes"
+            method: GET
+            user: "{{ hs_username }}"
+            password: "{{ hs_password }}"
+            force_basic_auth: true
+            validate_certs: false
+            return_content: true
+            status_code: 200
+            body_format: json
+            timeout: 30
+          register: nodes_response
+          until: >
+            (nodes_response.json | selectattr('nodeType', 'equalto', 'OTHER')
+            | rejectattr('name', 'match', '(?i).*ecgroup.*')
+            | rejectattr('name', 'match', '(?i).*ecg-.*')
+            | selectattr('platformServices', 'defined')
+            | selectattr('platformServices') | list | length)
+            >=
+            (nodes_response.json | selectattr('nodeType', 'equalto', 'OTHER')
+            | rejectattr('name', 'match', '(?i).*ecgroup.*')
+            | rejectattr('name', 'match', '(?i).*ecg-.*') | list | length)
+            or
+            (nodes_response.json | selectattr('nodeType', 'equalto', 'OTHER')
+            | rejectattr('name', 'match', '(?i).*ecgroup.*')
+            | rejectattr('name', 'match', '(?i).*ecg-.*') | list | length) == 0
+          retries: 20
+          delay: 15
+
+        - name: Filter OTHER nodes after retry
+          set_fact:
+            other_nodes: "{{ nodes_response.json | selectattr('nodeType', 'equalto', 'OTHER') | rejectattr('name', 'match', '(?i).*ecgroup.*') | rejectattr('name', 'match', '(?i).*ecg-.*') | list }}"
 
     - name: Extract non-reserved logical volumes
       set_fact:
@@ -166,6 +218,10 @@ cat > "$tmp_playbook" <<EOF
             | selectattr('reserved', 'equalto', false)
             | list
           }}
+
+    - name: Debug - Found volumes
+      debug:
+        msg: "Found {{ non_reserved_volumes | length }} non-reserved storage server volumes from {{ other_nodes | length }} OTHER nodes"
 
     - name: Create storage server volumes for addition (filter out ECGroup and existing)
       set_fact:

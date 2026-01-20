@@ -303,6 +303,8 @@ if [ "$OS_TYPE" = "oracle" ]; then
     if [ "$RUNNING_KERNEL" != "$LATEST_KERNEL" ]; then
         echo "Kernel upgrade detected. Rebooting to load new kernel for DRBD compatibility..."
         echo "Reboot initiated at $(date)" | sudo tee /var/log/ecgroup-reboot.log
+        # Clean cloud-init state so it re-runs on next boot
+        sudo cloud-init clean
         sudo reboot
     else
         echo "Kernel is up to date. No reboot needed."

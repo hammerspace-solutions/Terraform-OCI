@@ -365,8 +365,9 @@ EOF
 
 # Upload local fixed ansible job scripts to replace GitHub versions
 # This provisioner ensures that local fixes are applied automatically during deployment
+# Only runs when there are storage servers or ECGroup nodes to configure
 resource "null_resource" "upload_fixed_scripts" {
-  count = var.instance_count
+  count = var.instance_count > 0 && (length(var.ecgroup_nodes) > 0 || length(var.storage_instances) > 0) ? var.instance_count : 0
 
   # Trigger on instance changes, script file changes, OR node changes (storage/ecgroup)
   triggers = {

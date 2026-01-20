@@ -6,10 +6,13 @@
 # administrative, civil or criminal actions against you, under
 # applicable law. 
 terraform {
+  required_version = ">= 0.12.0"
   required_providers {
     oci = {
-      source  = "oracle/oci"
-      version = "7.11.0"
+      # source  = "oracle/oci"                                                                                                                             
+      # version = "7.11.0" 
+      source  = "hashicorp/oci"
+      version = "6.21.0"
     }
   }
 }

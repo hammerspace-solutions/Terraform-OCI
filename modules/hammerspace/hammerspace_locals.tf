@@ -39,6 +39,27 @@ locals {
   anvil_is_flex_shape = can(regex("Flex$", var.anvil_shape))
   dsx_is_flex_shape   = can(regex("Flex$", var.dsx_shape))
 
+  # --- Volume Attachment Type for BM shapes ---
+  # Use iscsi for Bare Metal shapes, paravirtualized for VM shapes
+  launch_volume_attachment_type_mds = startswith(var.anvil_shape, "BM") ? "iscsi" : "paravirtualized"
+  launch_volume_attachment_type_dsx = startswith(var.dsx_shape, "BM") ? "iscsi" : "paravirtualized"
+
+  # --- Image ID Selection ---
+  # Use specific image if provided, otherwise fall back to common image_id
+  effective_anvil_image_id = var.anvil_image_id != "" ? var.anvil_image_id : var.image_id
+  effective_dsx_image_id   = var.dsx_image_id != "" ? var.dsx_image_id : var.image_id
+
+  # --- OCI Config for metadata ---
+  # Merge api_key, config_file, and optional oci_cli_rc
+  oci_config = merge(
+    {
+      api_key     = file("${var.api_key}")
+      config_file = file("${var.config_file}")
+    },
+    # oci_cli_rc is optional
+    var.oci_cli_rc != null ? { oci_cli_rc = file("${var.oci_cli_rc}") } : {}
+  )
+
   # --- Security Group Selection Logic ---
   effective_anvil_sg_id = var.anvil_security_group_id != "" ? var.anvil_security_group_id : (length(oci_core_network_security_group.anvil_data_nsg) > 0 ? oci_core_network_security_group.anvil_data_nsg[0].id : null)
   effective_dsx_sg_id   = var.dsx_security_group_id != "" ? var.dsx_security_group_id : (length(oci_core_network_security_group.dsx_nsg) > 0 ? oci_core_network_security_group.dsx_nsg[0].id : null)

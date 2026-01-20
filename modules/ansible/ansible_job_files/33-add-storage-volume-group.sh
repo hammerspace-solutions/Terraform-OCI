@@ -155,9 +155,13 @@ cat > "$tmp_playbook" <<EOF
       retries: 30
       delay: 10
 
+    - name: Get existing volume group
+      set_fact:
+        existing_vg: "{{ volume_groups_response.json | selectattr('name', 'equalto', volume_group_name) | list | first | default(none) }}"
+
     - name: Set fact for VG exists
       set_fact:
-        vg_exists: "{{ volume_group_name in (volume_groups_response.json | map(attribute='name') | list) }}"
+        vg_exists: "{{ existing_vg is not none }}"
 
     - name: Create volume group if missing
       uri:
@@ -189,23 +193,16 @@ cat > "$tmp_playbook" <<EOF
       retries: 30
       delay: 10
 
-    - name: Update volume group if exists (assume PUT for update)
+    - name: Build updated volume group object (preserves uoid and other required fields)
+      set_fact:
+        updated_vg: "{{ existing_vg | combine({'expressions': [{'operator': 'IN', 'locations': vg_node_locations}]}, recursive=True) }}"
+      when: vg_exists
+
+    - name: Update volume group if exists
       uri:
         url: "https://{{ data_cluster_mgmt_ip }}:8443/mgmt/v1.2/rest/volume-groups/{{ volume_group_name }}"
         method: PUT
-        body: >-
-          {{
-            {
-              "name": volume_group_name,
-              "_type": "VOLUME_GROUP",
-              "expressions": [
-                {
-                  "operator": "IN",
-                  "locations": vg_node_locations
-                }
-              ]
-            }
-          }}
+        body: "{{ updated_vg }}"
         user: "{{ hs_username }}"
         password: "{{ hs_password }}"
         force_basic_auth: true
@@ -213,7 +210,7 @@ cat > "$tmp_playbook" <<EOF
         body_format: json
         validate_certs: false
         timeout: 30
-      when: vg_exists
+      when: vg_exists and updated_vg is defined
       register: vg_update
       until: vg_update.status == 200
       retries: 30

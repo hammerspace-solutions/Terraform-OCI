@@ -171,6 +171,8 @@ add_ecgroup_volumes        = true           # Auto-register ECGroup volumes
 | Add ECGroup Volumes to HS | ✅ Yes | `add_ecgroup_volumes = true` | Auto-register ECGroup |
 | Custom Cloud-Init Scripts | ✅ Yes | `*_user_data` | Custom provisioning |
 | **Auto-detect New Nodes** | ✅ Yes | Automatic | Detects & configures new storage/ECGroup nodes |
+| **platformServices Discovery** | ✅ Yes | Automatic | Waits for NFS export discovery |
+| **Volume Group Auto-Update** | ✅ Yes | Automatic | Adds new nodes to existing VG |
 
 ### Automatic Node Detection & Configuration
 
@@ -194,22 +196,17 @@ The Ansible module automatically detects when new Storage Servers or ECGroup nod
 │         │                                                                   │
 │         ▼                                                                   │
 │   ┌─────────────────────────────────────────────────────────────────────┐   │
-│   │  null_resource.upload_fixed_scripts triggers                        │   │
+│   │  Ansible inventory.ini updated with new nodes                       │   │
 │   └─────────────────────────────────────────────────────────────────────┘   │
 │         │                                                                   │
-│         ├──────────────────────────────────────────────────────────┐        │
-│         ▼                                                          ▼        │
-│   ┌───────────────────────┐                        ┌───────────────────┐    │
-│   │ Update inventory.ini  │                        │ Update deploy_vars│    │
-│   │ with new nodes        │                        │ environment file  │    │
-│   └───────────────────────┘                        └───────────────────┘    │
-│         │                                                    │              │
-│         └──────────────────────────┬─────────────────────────┘              │
-│                                    ▼                                        │
-│                    ┌───────────────────────────────────┐                    │
-│                    │  Run ansible_config_main.sh       │                    │
-│                    │  (configures new nodes)           │                    │
-│                    └───────────────────────────────────┘                    │
+│         ▼                                                                   │
+│   ┌─────────────────────────────────────────────────────────────────────┐   │
+│   │  Ansible job scripts run:                                           │   │
+│   │  30-add-storage-nodes.sh    → Add nodes to Hammerspace              │   │
+│   │  32-add-storage-volumes.sh  → Wait for discovery, add volumes       │   │
+│   │  33-add-storage-volume-group.sh → Create/update volume group        │   │
+│   │  34-create-storage-share.sh → Create share (if needed)              │   │
+│   └─────────────────────────────────────────────────────────────────────┘   │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -220,6 +217,15 @@ The Ansible module automatically detects when new Storage Servers or ECGroup nod
 | `ecgroup_nodes_hash` | ECGroup nodes added/removed | Re-configure ECGroup cluster |
 | `ecgroup_add_to_hs` | Integration enabled/disabled | Update Hammerspace integration |
 | `add_storage_volumes` | Volume addition toggled | Update volume configuration |
+
+### Ansible Job Scripts
+
+| Script | Function | Key Features |
+|--------|----------|--------------|
+| `30-add-storage-nodes.sh` | Add nodes to Hammerspace | Registers storage servers as OTHER nodes |
+| `32-add-storage-volumes.sh` | Add storage volumes | Waits for platformServices discovery with retry logic |
+| `33-add-storage-volume-group.sh` | Manage volume group | Creates new VG or updates existing with new nodes |
+| `34-create-storage-share.sh` | Create share | Idempotent, only adds confine objective if VG configured |
 
 **Example: Adding Storage Servers Later**
 
@@ -233,7 +239,10 @@ deploy_components = ["hammerspace", "ansible", "storage"]
 storage_instance_count = 2
 
 # Run: terraform apply
-# Ansible automatically detects and configures new storage servers
+# Ansible automatically:
+# 1. Waits for platformServices discovery on new nodes
+# 2. Adds new volumes to Hammerspace
+# 3. Updates volume group to include new nodes
 ```
 
 ---
@@ -258,6 +267,44 @@ storage_instance_count = 2
 | Existing Anvil Password | ✅ Yes | `hammerspace_existing_anvil_password` | For existing clusters |
 | Bastion CIDR Restrictions | ✅ Yes | `bastion_allowed_source_cidr_blocks` | Limit SSH access |
 | OCI API Key Integration | ✅ Yes | `api_key`, `config_file` | Instance OCI access |
+
+---
+
+## Pre-flight Validation
+
+| Check | Supported | Description |
+|-------|-----------|-------------|
+| **Networking Validation** | | |
+| VCN Existence | ✅ Yes | Validates provided VCN exists |
+| Subnet Exists in VCN | ✅ Yes | Validates subnet belongs to VCN |
+| Network Configuration | ✅ Yes | Ensures VCN+subnet or create_networking |
+| NAT Gateway Configuration | ✅ Yes | Validates NAT gateway for HA Anvil |
+| **Instance Shape Availability** | | |
+| Anvil Shape Availability | ✅ Yes | Checks shape exists in AD |
+| DSX Shape Availability | ✅ Yes | Checks shape exists in AD |
+| Client Shape Availability | ✅ Yes | Checks shape exists in AD |
+| Storage Shape Availability | ✅ Yes | Checks shape exists in AD |
+| ECGroup Shape Availability | ✅ Yes | Checks shape exists in AD |
+| Ansible Shape Availability | ✅ Yes | Checks shape exists in AD |
+| Bastion Shape Availability | ✅ Yes | Checks shape exists in AD |
+| **Image Existence** | | |
+| Hammerspace Image Exists | ✅ Yes | Validates image ID in region |
+| Client Image Exists | ✅ Yes | Validates image ID in region |
+| Storage Image Exists | ✅ Yes | Validates image ID in region |
+| ECGroup Image Exists | ✅ Yes | Validates image ID in region |
+| Ansible Image Exists | ✅ Yes | Validates image ID in region |
+| Bastion Image Exists | ✅ Yes | Validates image ID in region |
+| **Existing Infrastructure** | | |
+| Existing Anvil Config | ✅ Yes | Validates IPs and password when using existing Anvil |
+| Existing DSX Config | ✅ Yes | Validates IPs when using existing DSX |
+| DSX Requires Anvil | ✅ Yes | Ensures DSX has an Anvil (new or existing) |
+
+### Pre-flight Validation Benefits
+
+- **Early Error Detection**: Errors are caught during `terraform plan` before any resources are created
+- **Clear Error Messages**: Descriptive messages explain what's wrong and how to fix it
+- **No Wasted Resources**: Avoids creating partial infrastructure due to invalid configuration
+- **Existing Infrastructure Safety**: Validates existing Anvil/DSX configuration before attempting to use them
 
 ---
 

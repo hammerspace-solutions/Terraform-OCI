@@ -27,13 +27,16 @@
 # Local values for network interface names based on shape
 locals {
   # Determine network interface name based on shape
-  # E2/E3/E4 shapes use ens3, E5 shapes use enp0s5
+  # E2/E3/E4 shapes use ens3, E5 shapes (VM and BM) use enp0s5
+  anvil_is_e5_shape = can(regex("E5", var.anvil_shape))
+  dsx_is_e5_shape   = can(regex("E5", var.dsx_shape))
+
   anvil_interface_name = var.anvil_network_interface_name != "" ? var.anvil_network_interface_name : (
-    startswith(var.anvil_shape, "VM.Standard.E5") ? "enp0s5" : "ens3"
+    local.anvil_is_e5_shape ? "enp0s5" : "ens3"
   )
-  
+
   dsx_interface_name = var.dsx_network_interface_name != "" ? var.dsx_network_interface_name : (
-    startswith(var.dsx_shape, "VM.Standard.E5") ? "enp0s5" : "ens3"
+    local.dsx_is_e5_shape ? "enp0s5" : "ens3"
   )
 }
 
@@ -71,8 +74,14 @@ check "anvil_nat_gateway_requirement" {
 # Removed the data source validation as it causes issues with dynamic count
 # The NAT gateway existence will be validated at apply time
 
-data "oci_core_image" "hammerspace_image" {
-  image_id = var.image_id
+data "oci_core_image" "anvil_image" {
+  count    = var.anvil_count > 0 ? 1 : 0
+  image_id = local.effective_anvil_image_id
+}
+
+data "oci_core_image" "dsx_image" {
+  count    = var.dsx_count > 0 ? 1 : 0
+  image_id = local.effective_dsx_image_id
 }
 
 # --- Network Security Groups ---
@@ -342,8 +351,9 @@ resource "oci_core_instance" "anvil" {
   # Source details (image)
   source_details {
     source_type             = "image"
-    source_id               = var.image_id
+    source_id               = local.effective_anvil_image_id
     boot_volume_size_in_gbs = 200
+    boot_volume_vpus_per_gb = "10"
   }
 
   # Network configuration
@@ -360,19 +370,20 @@ resource "oci_core_instance" "anvil" {
     are_legacy_imds_endpoints_disabled = "false"
   }
   is_pv_encryption_in_transit_enabled = "false"
-  # Commented out to avoid duplicate metadata volume - using separate oci_core_volume resource instead
+  # Launch volume attachments for metadata disk
+  # Uses iscsi for Bare Metal shapes, paravirtualized for VM shapes
   launch_volume_attachments {
-    display_name = "${var.deployment_name}-mds-vol"
+    display_name = "${var.deployment_name}-mds${count.index}-vol"
     is_read_only = "false"
     is_shareable = "false"
     launch_create_volume_details {
       compartment_id       = var.common_config.compartment_id
-      display_name         = "${var.deployment_name}-mds-vol"
+      display_name         = "${var.deployment_name}-mds${count.index}-vol"
       size_in_gbs          = var.anvil_meta_disk_size
       volume_creation_type = "ATTRIBUTES"
       vpus_per_gb          = "10"
     }
-    type = "paravirtualized"
+    type = local.launch_volume_attachment_type_mds
   }
 
   # Metadata for cloud-init
@@ -390,7 +401,7 @@ resource "oci_core_instance" "anvil" {
         }
       }
       oci = {
-        api_key     = file("${var.api_key}"),
+        api_key     = file("${var.api_key}")
         config_file = file("${var.config_file}")
       }
       cluster = {
@@ -413,7 +424,7 @@ resource "oci_core_instance" "anvil" {
         "0" = {
           features = ["metadata"],
           hostname = "${var.deployment_name}-mds0",
-          ha_mode  = "Primary",
+          ha_mode  = "Secondary",
           networks = {
             (local.anvil_interface_name) = {
               roles = ["data", "mgmt", "ha"],
@@ -423,7 +434,7 @@ resource "oci_core_instance" "anvil" {
         "1" = {
           features = ["metadata"],
           hostname = "${var.deployment_name}-mds1",
-          ha_mode  = "Secondary",
+          ha_mode  = "Primary",
           networks = {
             (local.anvil_interface_name) = {
               roles = ["data", "mgmt", "ha"],
@@ -582,7 +593,7 @@ resource "oci_core_instance" "dsx" {
   # Source details (image)
   source_details {
     source_type             = "image"
-    source_id               = var.image_id
+    source_id               = local.effective_dsx_image_id
     boot_volume_size_in_gbs = var.dsx_block_volume_size
     boot_volume_vpus_per_gb = "10"
   }
@@ -612,15 +623,16 @@ resource "oci_core_instance" "dsx" {
         }
       }
       oci = {
-        api_key     = file("${var.api_key}"),
-        config_file = file("${var.config_file}"),
+        api_key     = file("${var.api_key}")
+        config_file = file("${var.config_file}")
       }
       cluster = {
         domainname  = "${var.domainname}"
         ntp_servers = ["169.254.169.254"]
-        password    = "${var.admin_user_password}"
+        password    = var.use_existing_anvil ? var.existing_anvil_password : var.admin_user_password
         metadata = {
-          ips = var.anvil_count > 0 ? [var.anvil_count > 1 ? oci_core_private_ip.cluster_ip[0].ip_address : oci_core_instance.anvil[0].private_ip] : []
+          # Use existing Anvil IPs if provided, otherwise use newly created Anvil IPs
+          ips = var.use_existing_anvil ? var.existing_anvil_ips : (var.anvil_count > 0 ? [var.anvil_count > 1 ? oci_core_private_ip.cluster_ip[0].ip_address : oci_core_instance.anvil[0].private_ip] : [])
         }
       }
     }))

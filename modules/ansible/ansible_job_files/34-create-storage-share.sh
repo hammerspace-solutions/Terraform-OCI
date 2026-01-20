@@ -57,8 +57,12 @@ SHARE_BODY+='"maxShareSizeType": "TB",'
 SHARE_BODY+='"smbAliases": [],'
 SHARE_BODY+='"exportOptions": [{"subnet": "'*'", "rootSquash": "false", "accessPermissions": "RW"}],'
 SHARE_BODY+='"shareSnapshots": [],'
-SHARE_BODY+='"shareObjectives": [{"objective": {"name": "no-atime"}, "applicability": "TRUE"},'
-SHARE_BODY+='{"objective": {"name": "confine-to-'$HS_VOLUME_GROUP'"}, "applicability": "TRUE"}],'
+if [ -n "$HS_VOLUME_GROUP" ]; then
+  SHARE_BODY+='"shareObjectives": [{"objective": {"name": "no-atime"}, "applicability": "TRUE"},'
+  SHARE_BODY+='{"objective": {"name": "confine-to-'$HS_VOLUME_GROUP'"}, "applicability": "TRUE"}],'
+else
+  SHARE_BODY+='"shareObjectives": [{"objective": {"name": "no-atime"}, "applicability": "TRUE"}],'
+fi
 SHARE_BODY+='"smbBrowsable": "true", "shareSizeLimit": "0"'
 SHARE_BODY+='}'
 

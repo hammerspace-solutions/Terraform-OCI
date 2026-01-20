@@ -250,6 +250,17 @@ check "bastion_image_exists" {
   }
 }
 
+check "ecgroup_image_exists" {
+  data "oci_core_image" "ecgroup_image_check" {
+    image_id = var.ecgroup_image_id
+  }
+
+  assert {
+    condition     = var.ecgroup_image_id == "" || data.oci_core_image.ecgroup_image_check.id == var.ecgroup_image_id
+    error_message = "Validation Error: The specified ecgroup_image_id (ID: ${var.ecgroup_image_id}) was not found in the region ${var.region}."
+  }
+}
+
 check "network_configuration" {
   assert {
     condition = (var.vcn_id != "" && var.subnet_id != "") || var.create_networking
@@ -260,13 +271,85 @@ check "network_configuration" {
 check "nat_gateway_configuration" {
   assert {
     condition = !(
-      var.hammerspace_anvil_count == 2 && 
-      !var.assign_public_ip && 
-      var.nat_gateway_id == "" && 
+      var.hammerspace_anvil_count == 2 &&
+      !var.assign_public_ip &&
+      var.nat_gateway_id == "" &&
       (var.vcn_id != "" || var.subnet_id != "") &&
       !var.create_nat_gateway_for_existing_vcn
     )
     error_message = "When using existing VCN/subnet with hammerspace_anvil_count=2 and assign_public_ip=false, you must either provide nat_gateway_id or set create_nat_gateway_for_existing_vcn=true"
+  }
+}
+
+# -----------------------------------------------------------------------------
+# Validation checks for existing Hammerspace infrastructure
+# -----------------------------------------------------------------------------
+
+check "existing_anvil_config" {
+  assert {
+    condition = (
+      # If not using existing Anvil, nothing to check
+      !var.hammerspace_use_existing_anvil
+      ||
+      # If using existing Anvil, IPs and password must be provided
+      (
+        length(var.hammerspace_existing_anvil_ips) > 0 &&
+        var.hammerspace_existing_anvil_password != ""
+      )
+    )
+
+    error_message = <<-EOT
+      Invalid existing Anvil configuration:
+
+      When hammerspace_use_existing_anvil = true, you must provide:
+        - hammerspace_existing_anvil_ips (list of IP addresses)
+        - hammerspace_existing_anvil_password (admin password)
+    EOT
+  }
+}
+
+check "existing_dsx_config" {
+  assert {
+    condition = (
+      # If not using existing DSX, nothing to check
+      !var.hammerspace_use_existing_dsx
+      ||
+      # If using existing DSX, IPs must be provided
+      length(var.hammerspace_existing_dsx_ips) > 0
+    )
+
+    error_message = <<-EOT
+      Invalid existing DSX configuration:
+
+      When hammerspace_use_existing_dsx = true, you must provide:
+        - hammerspace_existing_dsx_ips (list of IP addresses)
+    EOT
+  }
+}
+
+check "dsx_requires_anvil" {
+  assert {
+    condition = (
+      # If not deploying hammerspace at all, nothing to check
+      !(contains(var.deploy_components, "all") || contains(var.deploy_components, "hammerspace"))
+      ||
+      # If deploying hammerspace, DSX needs an Anvil (either existing or new)
+      (
+        # Has existing Anvil
+        var.hammerspace_use_existing_anvil
+        ||
+        # Or will deploy new Anvil
+        var.hammerspace_anvil_count > 0
+      )
+    )
+
+    error_message = <<-EOT
+      Invalid Hammerspace configuration:
+
+      DSX nodes require an Anvil metadata server. You must either:
+        - Set hammerspace_anvil_count > 0 to deploy new Anvil(s)
+        - Set hammerspace_use_existing_anvil = true with existing Anvil IPs
+    EOT
   }
 }
 

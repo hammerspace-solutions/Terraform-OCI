@@ -61,8 +61,21 @@ variable "dsx_capacity_reservation_id" {
 # --- Hammerspace-specific variables ---
 
 variable "image_id" {
-  description = "OCID of the image to use for Hammerspace Anvil and DSX instances."
+  description = "OCID of the image to use for Hammerspace instances (used as fallback if anvil_image_id or dsx_image_id not specified)."
   type        = string
+  default     = ""
+}
+
+variable "anvil_image_id" {
+  description = "OCID of the image to use for Anvil (MDS) instances. If not specified, falls back to image_id."
+  type        = string
+  default     = ""
+}
+
+variable "dsx_image_id" {
+  description = "OCID of the image to use for DSX instances. If not specified, falls back to image_id."
+  type        = string
+  default     = ""
 }
 
 variable "profile_id" {
@@ -100,8 +113,9 @@ variable "sa_anvil_destruction" {
 }
 
 variable "anvil_shape" {
-  description = "OCI instance shape for Anvil metadata servers (e.g., 'VM.Standard.E4.Flex')."
+  description = "OCI instance shape for Anvil metadata servers (e.g., 'VM.Standard.E5.Flex')."
   type        = string
+  default     = "VM.Standard.E5.Flex"
 }
 
 variable "anvil_ocpus" {
@@ -117,8 +131,9 @@ variable "anvil_memory_in_gbs" {
 }
 
 variable "dsx_shape" {
-  description = "OCI instance shape for DSX data services nodes (e.g., 'VM.Standard.E4.Flex')."
+  description = "OCI instance shape for DSX data services nodes (e.g., 'VM.Standard.E5.Flex')."
   type        = string
+  default     = "VM.Standard.E5.Flex"
 }
 
 variable "dsx_ocpus" {
@@ -253,6 +268,13 @@ variable "config_file" {
   description = "OCI generated config file"
   type        = string
   default     = ""
+}
+
+variable "oci_cli_rc" {
+  description = "OCI CLI RC file (optional)"
+  type        = string
+  default     = null
+  nullable    = true
 }
 
 variable "admin_user_password" {

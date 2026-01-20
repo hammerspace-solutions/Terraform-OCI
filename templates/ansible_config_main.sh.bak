@@ -117,7 +117,7 @@ ECGROUP_INSTANCES_ARRAY=($ECGROUP_INSTANCES)
 ECGROUP_NODES_ARRAY=($ECGROUP_NODES)
 STORAGE_COUNT=$(echo "$STORAGE_INSTANCES" | jq '. | length' 2>/dev/null || echo "0")
 
-cat > /var/ansible/trigger/inventory.ini << INV_EOF
+cat > /var/ansible/trigger/inventory.ini << 'INV_EOF'
 [all:vars]
 hs_username = admin
 hs_password = ${ADMIN_USER_PASSWORD}
@@ -147,9 +147,9 @@ fi
 
 echo "" >> /var/ansible/trigger/inventory.ini
 echo "[ecgroup_nodes]" >> /var/ansible/trigger/inventory.ini
-if [ ${#ECGROUP_NODES_ARRAY[@]} -gt 0 ]; then
-    for i in "${!ECGROUP_NODES_ARRAY[@]}"; do
-        echo "${ECGROUP_NODES_ARRAY[$i]} node_name=\"${ECGROUP_INSTANCES_ARRAY[$i]:-ecgroup-node-$i}\" ansible_user=rocky" >> /var/ansible/trigger/inventory.ini
+if [ $${#ECGROUP_NODES_ARRAY[@]} -gt 0 ]; then
+    for i in "$${!ECGROUP_NODES_ARRAY[@]}"; do
+        echo "$${ECGROUP_NODES_ARRAY[$i]} node_name=\"$${ECGROUP_INSTANCES_ARRAY[$i]:-ecgroup-node-$i}\" ansible_user=rocky" >> /var/ansible/trigger/inventory.ini
     done
 fi
 
@@ -167,13 +167,13 @@ if [ "$STORAGE_COUNT" -gt 0 ]; then
     echo "$STORAGE_INSTANCES" | jq -r 'map("- name: \"" + .name + "\"\n  nodeType: \"OTHER\"\n  mgmtIpAddress:\n    address: \"" + .private_ip + "\"\n  _type: \"NODE\"")[]' >> /tmp/nodes.yml
 fi
 
-if [ ${#ECGROUP_NODES_ARRAY[@]} -gt 0 ]; then
-    for i in "${!ECGROUP_NODES_ARRAY[@]}"; do
+if [ $${#ECGROUP_NODES_ARRAY[@]} -gt 0 ]; then
+    for i in "$${!ECGROUP_NODES_ARRAY[@]}"; do
         cat >> /tmp/nodes.yml << NODE_EOF
-- name: "${ECGROUP_INSTANCES_ARRAY[$i]:-ecgroup-node-$i}"
+- name: "$${ECGROUP_INSTANCES_ARRAY[$i]:-ecgroup-node-$i}"
   nodeType: "OTHER"
   mgmtIpAddress:
-    address: "${ECGROUP_NODES_ARRAY[$i]}"
+    address: "$${ECGROUP_NODES_ARRAY[$i]}"
   _type: "NODE"
 NODE_EOF
     done
@@ -302,14 +302,14 @@ chown $ANSIBLE_USER:$ANSIBLE_USER "$PLAYBOOK_FILE"
 sudo -u $ANSIBLE_USER bash -c "timeout 300 ssh-keyscan -H -f ${ANSIBLE_HOME}/inventory.ini >> ${ANSIBLE_HOME}/.ssh/known_hosts 2>/dev/null || true"
 
 # Distribute root SSH keys for ECGroup nodes (required for RozoFS cluster configuration)
-if [ ${#ECGROUP_NODES_ARRAY[@]} -gt 0 ]; then
+if [ $${#ECGROUP_NODES_ARRAY[@]} -gt 0 ]; then
     echo "=========================================="
     echo "Distributing root SSH keys for ECGroup nodes..."
     echo "=========================================="
 
     # Step 1: Generate root SSH keys on each ECGroup node
     echo "Generating root SSH keys on each node..."
-    for node_ip in "${ECGROUP_NODES_ARRAY[@]}"; do
+    for node_ip in "$${ECGROUP_NODES_ARRAY[@]}"; do
         echo "  - Generating key on $node_ip"
         ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 \
             -i ${ANSIBLE_HOME}/.ssh/ansible_admin_key rocky@$node_ip \
@@ -323,7 +323,7 @@ if [ ${#ECGROUP_NODES_ARRAY[@]} -gt 0 ]; then
     # Step 2: Collect all root public keys
     echo "Collecting root public keys from all nodes..."
     root_pubkeys_file=$(mktemp)
-    for node_ip in "${ECGROUP_NODES_ARRAY[@]}"; do
+    for node_ip in "$${ECGROUP_NODES_ARRAY[@]}"; do
         echo "  - Collecting key from $node_ip"
         ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 \
             -i ${ANSIBLE_HOME}/.ssh/ansible_admin_key rocky@$node_ip \
@@ -334,7 +334,7 @@ if [ ${#ECGROUP_NODES_ARRAY[@]} -gt 0 ]; then
 
     # Step 3: Distribute all root public keys to all ECGroup nodes
     echo "Distributing all root public keys to all nodes..."
-    for node_ip in "${ECGROUP_NODES_ARRAY[@]}"; do
+    for node_ip in "$${ECGROUP_NODES_ARRAY[@]}"; do
         echo "  - Distributing keys to $node_ip"
         cat "$root_pubkeys_file" | ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 \
             -i ${ANSIBLE_HOME}/.ssh/ansible_admin_key rocky@$node_ip \
@@ -349,7 +349,7 @@ if [ ${#ECGROUP_NODES_ARRAY[@]} -gt 0 ]; then
 
     # Step 4: Enable root login with public key authentication
     echo "Configuring SSH to allow root login with keys..."
-    for node_ip in "${ECGROUP_NODES_ARRAY[@]}"; do
+    for node_ip in "$${ECGROUP_NODES_ARRAY[@]}"; do
         ssh -o StrictHostKeyChecking=no -o ConnectTimeout=30 \
             -i ${ANSIBLE_HOME}/.ssh/ansible_admin_key rocky@$node_ip \
             "sudo sed -i 's/^#*PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config && \
@@ -360,9 +360,9 @@ if [ ${#ECGROUP_NODES_ARRAY[@]} -gt 0 ]; then
 
     # Step 5: Test root SSH connectivity
     echo "Testing root SSH connectivity between nodes..."
-    first_node="${ECGROUP_NODES_ARRAY[0]}"
+    first_node="$${ECGROUP_NODES_ARRAY[0]}"
     ssh_test_passed=true
-    for node_ip in "${ECGROUP_NODES_ARRAY[@]}"; do
+    for node_ip in "$${ECGROUP_NODES_ARRAY[@]}"; do
         echo "  - Testing root SSH from $first_node to $node_ip"
         if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
             -i ${ANSIBLE_HOME}/.ssh/ansible_admin_key rocky@$first_node \
@@ -394,7 +394,7 @@ if [ -n "${ECGROUP_INSTANCES}" ]; then
     run_ansible_job "20-configure-ecgroup.sh" || echo "WARNING: ECGroup configuration failed, check logs"
 
     # Wait for ECGroup RozoFS services to be fully ready
-    if [ ${#ECGROUP_NODES_ARRAY[@]} -gt 0 ]; then
+    if [ $${#ECGROUP_NODES_ARRAY[@]} -gt 0 ]; then
         echo "=========================================="
         echo "Waiting for ECGroup RozoFS services to start..."
         echo "=========================================="
@@ -408,9 +408,9 @@ if [ -n "${ECGROUP_INSTANCES}" ]; then
             echo "Checking ECGroup service health... ($elapsed/$max_wait seconds)"
 
             ready_count=0
-            total_nodes=${#ECGROUP_NODES_ARRAY[@]}
+            total_nodes=$${#ECGROUP_NODES_ARRAY[@]}
 
-            for node_ip in "${ECGROUP_NODES_ARRAY[@]}"; do
+            for node_ip in "$${ECGROUP_NODES_ARRAY[@]}"; do
                 # Check if both storage and export services are active
                 if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
                     -i ${ANSIBLE_HOME}/.ssh/ansible_admin_key rocky@$node_ip \
@@ -448,7 +448,7 @@ if [ -n "${ECGROUP_INSTANCES}" ]; then
 
             # Verify volumes are available
             echo "Verifying ECGroup volumes are available..."
-            first_node="${ECGROUP_NODES_ARRAY[0]}"
+            first_node="$${ECGROUP_NODES_ARRAY[0]}"
             if ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
                 -i ${ANSIBLE_HOME}/.ssh/ansible_admin_key rocky@$first_node \
                 "df -h | grep -q rozofs" 2>/dev/null; then
@@ -460,12 +460,7 @@ if [ -n "${ECGROUP_INSTANCES}" ]; then
     fi
 fi
 
-# Only run storage server jobs if ADD_STORAGE_SERVER_VOLUMES is true and we have storage servers
-if [ -n "${MGMT_IP}" ] && [ "${ADD_STORAGE_SERVER_VOLUMES}" = "true" ] && [ "$STORAGE_COUNT" -gt 0 ]; then
-    echo "=========================================="
-    echo "Configuring Storage Servers..."
-    echo "=========================================="
-
+if [ -n "${MGMT_IP}" ]; then
     run_ansible_job "30-add-storage-nodes.sh" || echo "WARNING: Storage node addition failed, check logs"
 
     # Wait for storage nodes to fully initialize their volumes before adding them
@@ -530,29 +525,9 @@ if [ -n "${MGMT_IP}" ] && [ "${ADD_STORAGE_SERVER_VOLUMES}" = "true" ] && [ "$ST
     run_ansible_job "32-add-storage-volumes.sh" || echo "WARNING: Storage volume addition failed"
     run_ansible_job "33-add-storage-volume-group.sh" || echo "WARNING: Storage volume group creation failed"
     run_ansible_job "34-create-storage-share.sh" || echo "WARNING: Storage share creation failed"
-elif [ -n "${MGMT_IP}" ]; then
-    echo "=========================================="
-    echo "Skipping Storage Server configuration (not enabled or no storage servers)"
-    echo "  ADD_STORAGE_SERVER_VOLUMES=${ADD_STORAGE_SERVER_VOLUMES}"
-    echo "  STORAGE_COUNT=${STORAGE_COUNT}"
-    echo "=========================================="
-fi
-
-# Only run ECGroup jobs if ECGROUP_ADD_TO_HAMMERSPACE is true and we have ECGroup nodes
-if [ -n "${MGMT_IP}" ] && [ "${ECGROUP_ADD_TO_HAMMERSPACE}" = "true" ] && [ -n "${ECGROUP_INSTANCES}" ]; then
-    echo "=========================================="
-    echo "Configuring ECGroup integration with Hammerspace..."
-    echo "=========================================="
-
     run_ansible_job "35-add-ecgroup-volumes.sh" || echo "WARNING: ECGroup volume addition failed"
     run_ansible_job "36-add-ecgroup-volume-group.sh" || echo "WARNING: ECGroup volume group creation failed"
     run_ansible_job "37-create-ecgroup-share.sh" || echo "WARNING: ECGroup share creation failed"
-elif [ -n "${MGMT_IP}" ]; then
-    echo "=========================================="
-    echo "Skipping ECGroup Hammerspace integration (not enabled or no ECGroup nodes)"
-    echo "  ECGROUP_ADD_TO_HAMMERSPACE=${ECGROUP_ADD_TO_HAMMERSPACE}"
-    echo "  ECGROUP_INSTANCES=${ECGROUP_INSTANCES}"
-    echo "=========================================="
 fi
 
 # Print execution summary

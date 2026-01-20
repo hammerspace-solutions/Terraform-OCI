@@ -382,8 +382,21 @@ variable "storage_raid_level" {
 # HAMMERSPACE-SPECIFIC VARIABLES
 # -----------------------------------------------------------------------------
 variable "hammerspace_image_id" {
-  description = "OCID of the image for Hammerspace instances"
+  description = "OCID of the image for Hammerspace instances (fallback if anvil/dsx specific images not set)"
   type        = string
+  default     = ""
+}
+
+variable "hammerspace_anvil_image_id" {
+  description = "OCID of the image for Anvil (MDS) instances. If not specified, falls back to hammerspace_image_id."
+  type        = string
+  default     = ""
+}
+
+variable "hammerspace_dsx_image_id" {
+  description = "OCID of the image for DSX instances. If not specified, falls back to hammerspace_image_id."
+  type        = string
+  default     = ""
 }
 
 variable "hammerspace_profile_id" {
@@ -772,6 +785,13 @@ variable "config_file" {
   description = "OCI generated config file"
   type        = string
   default     = "oci/config"
+}
+
+variable "oci_cli_rc" {
+  description = "OCI CLI RC file (optional)"
+  type        = string
+  default     = null
+  nullable    = true
 }
 
 variable "admin_user_password" {

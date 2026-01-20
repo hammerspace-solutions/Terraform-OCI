@@ -52,27 +52,46 @@ storage_type=$(ssh -i "$ECGROUP_PRIVATE_KEY_PATH" -o StrictHostKeyChecking=no \
 
 echo "[configure-ecgroup] Detected storage type: $storage_type"
 
-# Auto-detect device type and size from the node's available devices
-device_info=$(ssh -i "$ECGROUP_PRIVATE_KEY_PATH" -o StrictHostKeyChecking=no \
+# Auto-detect device type by getting raw device size and calculating like RozoFS does
+echo "[configure-ecgroup] Detecting device type from node..."
+
+# Get the device path from available_devices.txt
+device_path=$(ssh -i "$ECGROUP_PRIVATE_KEY_PATH" -o StrictHostKeyChecking=no \
   "$ECGROUP_USER@$first_node_ip" \
-  "head -2 /etc/rozofs/available_devices.txt | tail -1 2>/dev/null || echo 'unknown:unknown:unknown'")
+  "grep -v '^#' /etc/rozofs/available_devices.txt 2>/dev/null | head -1 | cut -d: -f2 || echo ''")
 
-# Parse device info (format: TYPE:DEVICE:SIZE)
-device_size=$(echo "$device_info" | cut -d: -f3)
+echo "[configure-ecgroup] Device path: $device_path"
 
-# Build storage array string based on detected type
-if [ "$storage_type" = "nvme" ]; then
-    eg_storage_array="NVME_${device_size}"
-elif [ "$storage_type" = "block" ]; then
-    eg_storage_array="HDD_${device_size}"
+if [ -n "$device_path" ] && [ "$device_path" != "" ]; then
+    # Get raw device size in bytes
+    raw_size_bytes=$(ssh -i "$ECGROUP_PRIVATE_KEY_PATH" -o StrictHostKeyChecking=no \
+      "$ECGROUP_USER@$first_node_ip" \
+      "lsblk -b -d -o SIZE $device_path 2>/dev/null | tail -1 || echo '0'")
+
+    echo "[configure-ecgroup] Raw size bytes: $raw_size_bytes"
+
+    # Calculate size in TiB with proper rounding (RozoFS uses TiB = 2^40 bytes)
+    if [ "$raw_size_bytes" != "0" ] && [ -n "$raw_size_bytes" ]; then
+        device_size=$(echo "$raw_size_bytes" | awk '{printf "%.1f", $1/1099511627776}')
+        echo "[configure-ecgroup] Calculated device size: ${device_size}T"
+
+        if [ "$storage_type" = "nvme" ]; then
+            eg_storage_array="NVME_${device_size}T"
+        else
+            eg_storage_array="HDD_${device_size}T"
+        fi
+    else
+        echo "[configure-ecgroup] WARNING: Could not get device size, using inventory value"
+        eg_storage_array=$(awk '/^\[all:vars\]$/{flag=1; next} /^\[.*\]$/{flag=0} flag && /ecgroup_storage_array = / \
+        {sub(/.*= /, ""); print}' "$INVENTORY_FILE")
+    fi
 else
-    # Fallback to inventory variable if detection fails
+    echo "[configure-ecgroup] WARNING: No device found, using inventory value"
     eg_storage_array=$(awk '/^\[all:vars\]$/{flag=1; next} /^\[.*\]$/{flag=0} flag && /ecgroup_storage_array = / \
     {sub(/.*= /, ""); print}' "$INVENTORY_FILE")
-    echo "[configure-ecgroup] WARNING: Could not detect storage type, using inventory value"
 fi
 
-echo "[configure-ecgroup] EC_ST_ARRAY = $eg_storage_array (auto-detected)"
+echo "[configure-ecgroup] EC_ST_ARRAY = $eg_storage_array"
 
 # 3. Parse ecgroup_nodes with IPs and names
 
@@ -187,6 +206,7 @@ if [ ${#new_hosts[@]} -gt 0 ]; then
         - create_cluster_result.rc != 0
         - '"already declared" not in create_cluster_result.stdout'
       changed_when: create_cluster_result.rc == 0
+      run_once: true
 
     - name: Add CTDB nodes
       shell: >
@@ -196,9 +216,74 @@ if [ ${#new_hosts[@]} -gt 0 ]; then
         - ctdb_node_add_result.rc != 0
         - '"duplicated" not in ctdb_node_add_result.stdout'
       changed_when: ctdb_node_add_result.rc == 0
+      run_once: true
 
-    # DRBD is optional - RozoFS provides redundancy through erasure coding
-    # Skipping DRBD setup as it requires LINBIT commercial license
+    # DRBD Setup - Install kernel module and utilities from ELRepo
+    - name: Configure ELRepo Archive repository for DRBD packages
+      copy:
+        dest: /etc/yum.repos.d/elrepo-archive.repo
+        content: |
+          [elrepo-archive]
+          name=ELRepo.org Community Enterprise Linux Repository - Archive (el9)
+          baseurl=https://mirror.rc.usf.edu/elrepo/archive/elrepo/el9/x86_64/
+          enabled=1
+          gpgcheck=1
+          gpgkey=https://www.elrepo.org/RPM-GPG-KEY-elrepo.org
+          priority=10
+          sslverify=no
+        mode: '0644'
+
+    - name: Import ELRepo GPG key
+      rpm_key:
+        key: https://www.elrepo.org/RPM-GPG-KEY-elrepo.org
+        state: present
+
+    - name: Clean yum cache
+      command: yum clean all
+
+    - name: Refresh yum metadata
+      command: yum makecache
+
+    - name: Remove old DRBD packages if present
+      yum:
+        name:
+          - drbd-utils
+          - drbd-selinux
+          - kmod-drbd
+        state: absent
+      ignore_errors: true
+
+    - name: Install DRBD9x packages from ELRepo
+      yum:
+        name:
+          - kmod-drbd9x
+          - drbd9x-utils
+        state: present
+        disable_gpg_check: true
+
+    - name: Load DRBD kernel module
+      modprobe:
+        name: drbd
+        state: present
+
+    - name: Verify DRBD installation
+      command: drbdadm --version
+      register: drbd_version
+      changed_when: false
+
+    - name: Display DRBD version
+      debug:
+        msg: "DRBD installed successfully - {{ drbd_version.stdout_lines }}"
+
+    - name: Setup DRBD with RozoFS metadata array
+      shell: >
+        /opt/rozofs-installer/rozo_drbd.sh -y -n {{ ecgroup_name }} -d "{{ ecgroup_metadata_array }}"
+      register: drbd_setup_result
+      failed_when:
+        - drbd_setup_result.rc != 0
+        - '"already" not in drbd_setup_result.stdout'
+      changed_when: drbd_setup_result.rc == 0
+      run_once: true
 
     - name: Create the array
       shell: >
@@ -207,6 +292,7 @@ if [ ${#new_hosts[@]} -gt 0 ]; then
       retries: 3
       delay: 10
       until: compute_cluster_result.rc == 0
+      run_once: true
 
     - name: Propagate the configuration (may partially fail on export.conf copy)
       shell: >
@@ -214,6 +300,7 @@ if [ ${#new_hosts[@]} -gt 0 ]; then
       register: install_result
       failed_when: false
       changed_when: install_result.rc == 0
+      run_once: true
 
     - name: Check if export.conf was built
       stat:
@@ -354,28 +441,28 @@ if [ ${#new_hosts[@]} -gt 0 ]; then
     # CRITICAL FIX: Clean up stale mount points to prevent rozofsmount SIGABRT
     # The rozofs_mountpoint_check() function aborts if stale entries exist in /proc/mounts
     - name: Kill any stale rozofsmount processes
-      shell: pkill -9 rozofsmount || true
+      shell: sudo pkill -9 rozofsmount || true
       failed_when: false
       changed_when: false
 
     - name: Unmount any stale RozoFS mounts (lazy unmount)
-      shell: umount -l /mnt/rozofs/NVME || true
+      shell: sudo umount -l /mnt/rozofs/NVME || true
       failed_when: false
       changed_when: false
 
     - name: Remove and recreate clean mount point
       shell: |
-        rm -rf /mnt/rozofs/NVME
-        mkdir -p /mnt/rozofs/NVME
-        chmod 755 /mnt/rozofs/NVME
+        sudo rm -rf /mnt/rozofs/NVME
+        sudo mkdir -p /mnt/rozofs/NVME
+        sudo chmod 755 /mnt/rozofs/NVME
       changed_when: true
 
     # Use localhost-only mount for simplicity and reliability
     # Each node mounts its own local exportd instance
     - name: Mount RozoFS NVME export locally (localhost only)
       shell: |
-        rozofsmount -H localhost -E /srv/rozofs/exports/NVME /mnt/rozofs/NVME &
-        sleep 5
+        sudo rozofsmount -H localhost -E /srv/rozofs/exports/NVME /mnt/rozofs/NVME &
+        sleep 10
         if df -h /mnt/rozofs/NVME 2>&1 | grep -q rozofs; then
           echo "Mount successful"
           exit 0
@@ -442,8 +529,6 @@ if [ ${#new_hosts[@]} -gt 0 ]; then
     - name: Display mount status
       debug:
         var: final_mount_check.stdout_lines
-
-  run_once: true
 EOF
 
   # 8. Run the Ansible playbook
