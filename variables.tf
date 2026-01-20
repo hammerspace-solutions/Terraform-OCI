@@ -117,6 +117,16 @@ variable "anvil_fault_domains" {
   }
 }
 
+variable "dsx_fault_domains" {
+  description = "List of fault domains for DSX instances. Instances are distributed round-robin. Example: [\"FAULT-DOMAIN-1\", \"FAULT-DOMAIN-2\", \"FAULT-DOMAIN-3\"]"
+  type        = list(string)
+  default     = []
+  validation {
+    condition     = length(var.dsx_fault_domains) == 0 || length(var.dsx_fault_domains) <= 3
+    error_message = "dsx_fault_domains must be empty or contain up to 3 fault domain names."
+  }
+}
+
 variable "assign_public_ip" {
   description = "If true, assigns a public IP address to all created compute instances"
   type        = bool

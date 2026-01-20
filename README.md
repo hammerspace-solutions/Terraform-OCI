@@ -350,7 +350,12 @@ fault_domain = "FAULT-DOMAIN-1"
 
 # Anvil HA across fault domains
 anvil_fault_domains = ["FAULT-DOMAIN-1", "FAULT-DOMAIN-2"]
+
+# DSX distribution across fault domains (round-robin)
+dsx_fault_domains = ["FAULT-DOMAIN-1", "FAULT-DOMAIN-2", "FAULT-DOMAIN-3"]
 ```
+
+When `dsx_fault_domains` is specified, DSX instances are distributed across the fault domains in round-robin fashion. For example, with 6 DSX nodes and 3 fault domains, each fault domain gets 2 DSX nodes.
 
 ## Volume Groups & Shares
 

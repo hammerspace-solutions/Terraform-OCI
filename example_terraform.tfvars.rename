@@ -31,6 +31,7 @@ subnet_cidr                         = "10.0.1.0/24"
 ad_number           = 1                                       # Availability Domain (1, 2, or 3)
 fault_domain        = ""                                      # For non-Anvil instances
 anvil_fault_domains = ["FAULT-DOMAIN-1", "FAULT-DOMAIN-2"]    # HA: place Anvils in different FDs
+dsx_fault_domains   = []                                      # Distribute DSX across FDs (round-robin)
 
 #=============================================================================
 # PROJECT SETTINGS

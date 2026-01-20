@@ -647,8 +647,8 @@ resource "oci_core_instance" "dsx" {
   }
   depends_on = [oci_core_instance.anvil, oci_core_private_ip.cluster_ip, oci_core_network_security_group.dsx_nsg]
 
-  # Fault domain
-  fault_domain = var.common_config.fault_domain
+  # Fault domain - distribute across specified fault domains or use default
+  fault_domain = length(var.dsx_fault_domains) > 0 ? element(var.dsx_fault_domains, count.index % length(var.dsx_fault_domains)) : var.common_config.fault_domain
 
   # Capacity reservation
   capacity_reservation_id = var.dsx_capacity_reservation_id

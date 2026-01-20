@@ -45,6 +45,7 @@ This document provides a comprehensive overview of all features and capabilities
 | Availability Domain Selection | ✅ Yes | `ad_number = 1/2/3` | Choose AD |
 | Fault Domain Selection | ✅ Yes | `fault_domain = "FAULT-DOMAIN-N"` | Place in specific FD |
 | Anvil Fault Domain Distribution | ✅ Yes | `anvil_fault_domains = ["FD-1", "FD-2"]` | HA across fault domains |
+| DSX Fault Domain Distribution | ✅ Yes | `dsx_fault_domains = ["FD-1", "FD-2", "FD-3"]` | Round-robin across fault domains |
 | Capacity Reservations | ✅ Yes | `hammerspace_anvil_capacity_reservation_id` | Reserved capacity |
 
 ---

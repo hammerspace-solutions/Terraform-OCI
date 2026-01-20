@@ -46,6 +46,12 @@ variable "anvil_fault_domains" {
   default     = []
 }
 
+variable "dsx_fault_domains" {
+  description = "List of fault domains for DSX instances. Instances are distributed across these fault domains round-robin. Example: [\"FAULT-DOMAIN-1\", \"FAULT-DOMAIN-2\", \"FAULT-DOMAIN-3\"]"
+  type        = list(string)
+  default     = []
+}
+
 variable "anvil_capacity_reservation_id" {
   description = "The OCID of the Compute Capacity Reservation to target for Anvil nodes."
   type        = string
