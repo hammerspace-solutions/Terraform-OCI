@@ -83,19 +83,19 @@ This Terraform project provides a modular, production-ready deployment of Hammer
 │  │  │  │         (Optional)           │    │          (Optional)              │   │  │  │
 │  │  │  │                              │    │                                  │   │  │  │
 │  │  │  │  ┌────────────────────────┐  │    │  ┌────────────────────────────┐  │   │  │  │
-│  │  │  │  │    ECGroup (RozoFS)    │  │    │  │    Ansible Controller     │  │   │  │  │
+│  │  │  │  │    ECGroup (RozoFS)    │  │    │  │    Ansible Controller      │  │   │  │  │
 │  │  │  │  │                        │  │    │  │                            │  │   │  │  │
-│  │  │  │  │  ┌──────┐ ┌──────┐    │  │    │  │  Automated Configuration  │  │   │  │  │
-│  │  │  │  │  │Node 1│ │Node 2│ ...│  │    │  │  - Add storage nodes      │  │   │  │  │
-│  │  │  │  │  └──────┘ └──────┘    │  │    │  │  - Create volume groups   │  │   │  │  │
+│  │  │  │  │  ┌──────┐ ┌──────┐    │  │    │  │  Automated Configuration    │  │   │  │  │
+│  │  │  │  │  │Node 1│ │Node 2│ ...│  │    │  │  - Add storage nodes       │  │   │  │  │
+│  │  │  │  │  └──────┘ └──────┘    │  │    │  │  - Create volume groups    │  │   │  │  │
 │  │  │  │  │                        │  │    │  │  - Configure shares       │  │   │  │  │
 │  │  │  │  │  Erasure-coded storage │  │    │  └────────────────────────────┘  │   │  │  │
 │  │  │  │  └────────────────────────┘  │    │                                  │   │  │  │
 │  │  │  │                              │    │  ┌────────────────────────────┐  │   │  │  │
-│  │  │  │  ┌────────────────────────┐  │    │  │     Client Instances      │  │   │  │  │
+│  │  │  │  ┌────────────────────────┐  │    │  │     Client Instances       │  │   │  │  │
 │  │  │  │  │    Storage Servers     │  │    │  │                            │  │   │  │  │
-│  │  │  │  │                        │  │    │  │  NFS/SMB mount points     │  │   │  │  │
-│  │  │  │  │  Generic block storage │  │    │  │  for testing/workloads    │  │   │  │  │
+│  │  │  │  │                        │  │    │  │  NFS/SMB mount points      │  │   │  │  │
+│  │  │  │  │  Generic block storage │  │    │  │  for testing/workloads     │  │   │  │  │
 │  │  │  │  │  with RAID support     │  │    │  └────────────────────────────┘  │   │  │  │
 │  │  │  │  └────────────────────────┘  │    │                                  │   │  │  │
 │  │  │  └──────────────────────────────┘    └──────────────────────────────────┘   │  │  │
