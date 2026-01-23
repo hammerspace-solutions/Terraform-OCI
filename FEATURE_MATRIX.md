@@ -4,6 +4,24 @@ This document provides a comprehensive overview of all features and capabilities
 
 ---
 
+## Table of Contents
+
+- [Component Deployment](#component-deployment)
+- [Networking](#networking)
+- [Availability & Placement](#availability--placement)
+- [Instance Configuration](#instance-configuration)
+- [Storage Configuration](#storage-configuration)
+- [Volume Groups & Shares (Hammerspace)](#volume-groups--shares-hammerspace)
+- [ECGroup (RozoFS) Features](#ecgroup-rozofs-features)
+- [Automation & Integration](#automation--integration)
+- [Phased Deployment Support](#phased-deployment-support)
+- [Security](#security)
+- [Pre-flight Validation](#pre-flight-validation)
+- [Quick Reference: deploy_components Options](#quick-reference-deploy_components-options)
+- [Example Configurations](#example-configurations)
+
+---
+
 ## Component Deployment
 
 | Feature | Supported | Variable | Description |
@@ -45,7 +63,6 @@ This document provides a comprehensive overview of all features and capabilities
 | Availability Domain Selection | ✅ Yes | `ad_number = 1/2/3` | Choose AD |
 | Fault Domain Selection | ✅ Yes | `fault_domain = "FAULT-DOMAIN-N"` | Place in specific FD |
 | Anvil Fault Domain Distribution | ✅ Yes | `anvil_fault_domains = ["FD-1", "FD-2"]` | HA across fault domains |
-| DSX Fault Domain Distribution | ✅ Yes | `dsx_fault_domains = ["FD-1", "FD-2", "FD-3"]` | Round-robin across fault domains |
 | Capacity Reservations | ✅ Yes | `hammerspace_anvil_capacity_reservation_id` | Reserved capacity |
 
 ---
@@ -172,8 +189,6 @@ add_ecgroup_volumes        = true           # Auto-register ECGroup volumes
 | Add ECGroup Volumes to HS | ✅ Yes | `add_ecgroup_volumes = true` | Auto-register ECGroup |
 | Custom Cloud-Init Scripts | ✅ Yes | `*_user_data` | Custom provisioning |
 | **Auto-detect New Nodes** | ✅ Yes | Automatic | Detects & configures new storage/ECGroup nodes |
-| **platformServices Discovery** | ✅ Yes | Automatic | Waits for NFS export discovery |
-| **Volume Group Auto-Update** | ✅ Yes | Automatic | Adds new nodes to existing VG |
 
 ### Automatic Node Detection & Configuration
 
@@ -197,17 +212,22 @@ The Ansible module automatically detects when new Storage Servers or ECGroup nod
 │         │                                                                   │
 │         ▼                                                                   │
 │   ┌─────────────────────────────────────────────────────────────────────┐   │
-│   │  Ansible inventory.ini updated with new nodes                       │   │
+│   │  null_resource.upload_fixed_scripts triggers                        │   │
 │   └─────────────────────────────────────────────────────────────────────┘   │
 │         │                                                                   │
-│         ▼                                                                   │
-│   ┌─────────────────────────────────────────────────────────────────────┐   │
-│   │  Ansible job scripts run:                                           │   │
-│   │  30-add-storage-nodes.sh    → Add nodes to Hammerspace              │   │
-│   │  32-add-storage-volumes.sh  → Wait for discovery, add volumes       │   │
-│   │  33-add-storage-volume-group.sh → Create/update volume group        │   │
-│   │  34-create-storage-share.sh → Create share (if needed)              │   │
-│   └─────────────────────────────────────────────────────────────────────┘   │
+│         ├──────────────────────────────────────────────────────────┐        │
+│         ▼                                                          ▼        │
+│   ┌───────────────────────┐                        ┌───────────────────┐    │
+│   │ Update inventory.ini  │                        │ Update deploy_vars│    │
+│   │ with new nodes        │                        │ environment file  │    │
+│   └───────────────────────┘                        └───────────────────┘    │
+│         │                                                    │              │
+│         └──────────────────────────┬─────────────────────────┘              │
+│                                    ▼                                        │
+│                    ┌───────────────────────────────────┐                    │
+│                    │  Run ansible_config_main.sh       │                    │
+│                    │  (configures new nodes)           │                    │
+│                    └───────────────────────────────────┘                    │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -218,15 +238,6 @@ The Ansible module automatically detects when new Storage Servers or ECGroup nod
 | `ecgroup_nodes_hash` | ECGroup nodes added/removed | Re-configure ECGroup cluster |
 | `ecgroup_add_to_hs` | Integration enabled/disabled | Update Hammerspace integration |
 | `add_storage_volumes` | Volume addition toggled | Update volume configuration |
-
-### Ansible Job Scripts
-
-| Script | Function | Key Features |
-|--------|----------|--------------|
-| `30-add-storage-nodes.sh` | Add nodes to Hammerspace | Registers storage servers as OTHER nodes |
-| `32-add-storage-volumes.sh` | Add storage volumes | Waits for platformServices discovery with retry logic |
-| `33-add-storage-volume-group.sh` | Manage volume group | Creates new VG or updates existing with new nodes |
-| `34-create-storage-share.sh` | Create share | Idempotent, only adds confine objective if VG configured |
 
 **Example: Adding Storage Servers Later**
 
@@ -240,10 +251,7 @@ deploy_components = ["hammerspace", "ansible", "storage"]
 storage_instance_count = 2
 
 # Run: terraform apply
-# Ansible automatically:
-# 1. Waits for platformServices discovery on new nodes
-# 2. Adds new volumes to Hammerspace
-# 3. Updates volume group to include new nodes
+# Ansible automatically detects and configures new storage servers
 ```
 
 ---

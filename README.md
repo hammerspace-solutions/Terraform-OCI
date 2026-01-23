@@ -2,6 +2,36 @@
 
 Terraform infrastructure-as-code for deploying Hammerspace Global Data Environment on Oracle Cloud Infrastructure (OCI).
 
+---
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Architecture](#architecture)
+- [Prerequisites](#prerequisites)
+- [Quick Start](#quick-start)
+- [Component Selection](#component-selection)
+- [Deployment Scenarios](#deployment-scenarios)
+  - [Scenario 1: Standalone Anvil Only](#scenario-1-standalone-anvil-only)
+  - [Scenario 2: Anvil + DSX Nodes](#scenario-2-anvil--dsx-nodes)
+  - [Scenario 3: Phased Deployment](#scenario-3-phased-deployment)
+  - [Scenario 4: Use Existing Anvil](#scenario-4-use-existing-anvil)
+  - [Scenario 5: Hammerspace + ECGroup](#scenario-5-hammerspace--ecgroup)
+- [Networking Options](#networking-options)
+- [Instance Shapes](#instance-shapes)
+- [Placement Control](#placement-control)
+- [Volume Groups & Shares](#volume-groups--shares)
+- [Automatic Node Detection](#automatic-node-detection)
+- [Outputs](#outputs)
+- [Feature Matrix](#feature-matrix)
+- [Pre-flight Validation](#pre-flight-validation)
+- [Troubleshooting](#troubleshooting)
+- [Clean Up](#clean-up)
+- [File Structure](#file-structure)
+- [License](#license)
+
+---
+
 ## Overview
 
 This Terraform project provides a modular, production-ready deployment of Hammerspace components on OCI, including:
@@ -53,19 +83,19 @@ This Terraform project provides a modular, production-ready deployment of Hammer
 │  │  │  │         (Optional)           │    │          (Optional)              │   │  │  │
 │  │  │  │                              │    │                                  │   │  │  │
 │  │  │  │  ┌────────────────────────┐  │    │  ┌────────────────────────────┐  │   │  │  │
-│  │  │  │  │    ECGroup (RozoFS)    │  │    │  │    Ansible Controller      │  │   │  │  │
+│  │  │  │  │    ECGroup (RozoFS)    │  │    │  │    Ansible Controller     │  │   │  │  │
 │  │  │  │  │                        │  │    │  │                            │  │   │  │  │
-│  │  │  │  │  ┌──────┐ ┌──────┐     │  │    │  │  Automated Configuration   │  │   │  │  │
-│  │  │  │  │  │Node 1│ │Node 2│ ... │  │    │  │  - Add storage nodes       │  │   │  │  │
-│  │  │  │  │  └──────┘ └──────┘     │  │    │  │  - Create volume groups    │  │   │  │  │
-│  │  │  │  │                        │  │    │  │  - Configure shares        │  │   │  │  │
+│  │  │  │  │  ┌──────┐ ┌──────┐    │  │    │  │  Automated Configuration  │  │   │  │  │
+│  │  │  │  │  │Node 1│ │Node 2│ ...│  │    │  │  - Add storage nodes      │  │   │  │  │
+│  │  │  │  │  └──────┘ └──────┘    │  │    │  │  - Create volume groups   │  │   │  │  │
+│  │  │  │  │                        │  │    │  │  - Configure shares       │  │   │  │  │
 │  │  │  │  │  Erasure-coded storage │  │    │  └────────────────────────────┘  │   │  │  │
 │  │  │  │  └────────────────────────┘  │    │                                  │   │  │  │
 │  │  │  │                              │    │  ┌────────────────────────────┐  │   │  │  │
-│  │  │  │  ┌────────────────────────┐  │    │  │     Client Instances       │  │   │  │  │
+│  │  │  │  ┌────────────────────────┐  │    │  │     Client Instances      │  │   │  │  │
 │  │  │  │  │    Storage Servers     │  │    │  │                            │  │   │  │  │
-│  │  │  │  │                        │  │    │  │  NFS/SMB mount points      │  │   │  │  │
-│  │  │  │  │  Generic block storage │  │    │  │  for testing/workloads     │  │   │  │  │
+│  │  │  │  │                        │  │    │  │  NFS/SMB mount points     │  │   │  │  │
+│  │  │  │  │  Generic block storage │  │    │  │  for testing/workloads    │  │   │  │  │
 │  │  │  │  │  with RAID support     │  │    │  └────────────────────────────┘  │   │  │  │
 │  │  │  │  └────────────────────────┘  │    │                                  │   │  │  │
 │  │  │  └──────────────────────────────┘    └──────────────────────────────────┘   │  │  │
