@@ -1,4 +1,4 @@
-# Terraform-OCI-SplitFD
+# Terraform-OCI
 
 Terraform infrastructure-as-code for deploying Hammerspace Global Data Environment on Oracle Cloud Infrastructure (OCI).
 
@@ -85,9 +85,9 @@ This Terraform project provides a modular, production-ready deployment of Hammer
 │  │  │  │  ┌────────────────────────┐  │    │  ┌────────────────────────────┐  │   │  │  │
 │  │  │  │  │    ECGroup (RozoFS)    │  │    │  │    Ansible Controller      │  │   │  │  │
 │  │  │  │  │                        │  │    │  │                            │  │   │  │  │
-│  │  │  │  │  ┌──────┐ ┌──────┐    │  │    │  │  Automated Configuration    │  │   │  │  │
-│  │  │  │  │  │Node 1│ │Node 2│ ...│  │    │  │  - Add storage nodes        │  │   │  │  │
-│  │  │  │  │  └──────┘ └──────┘    │  │    │  │  - Create volume groups     │  │   │  │  │
+│  │  │  │  │  ┌──────┐ ┌──────┐     │  │    │  │  Automated Configuration   │  │   │  │  │
+│  │  │  │  │  │Node 1│ │Node 2│ ... │  │    │  │  - Add storage nodes       │  │   │  │  │
+│  │  │  │  │  └──────┘ └──────┘     │  │    │  │  - Create volume groups    │  │   │  │  │
 │  │  │  │  │                        │  │    │  │  - Configure shares        │  │   │  │  │
 │  │  │  │  │  Erasure-coded storage │  │    │  └────────────────────────────┘  │   │  │  │
 │  │  │  │  └────────────────────────┘  │    │                                  │   │  │  │
@@ -123,9 +123,9 @@ This Terraform project provides a modular, production-ready deployment of Hammer
 
 ### Required
 
-- **Terraform** >= 1.0.0
-- **OCI CLI** configured with valid credentials
-- **OCI Account** with appropriate permissions
+- **[Terraform](https://developer.hashicorp.com/terraform/downloads)** >= 1.0.0
+- **[OCI CLI](https://docs.oracle.com/en-us/iaas/Content/API/SDKDocs/cliinstall.htm)** configured with valid credentials
+- **[OCI Account](https://cloud.oracle.com/)** with appropriate permissions
 - **Hammerspace Images** available in your OCI tenancy
 
 ### OCI Credentials
@@ -410,9 +410,9 @@ When you add new Storage Servers or ECGroup nodes to an existing deployment, the
 
 ### How It Works
 
-1. **Terraform detects changes** - When you increase `storage_server_count` or `ecgroup_node_count`, Terraform updates the Ansible module triggers
-2. **Inventory updated** - The Ansible controller receives an updated inventory with new node IPs
-3. **Configuration re-runs** - The ansible_config_main.sh script automatically runs to configure new nodes
+1. **Terraform detects changes** - When you increase `storage_server_count` or `ecgroup_node_count`, Terraform updates the Ansible module triggers.
+2. **Inventory updated** - The Ansible controller receives an updated inventory with new node IPs.
+3. **Configuration re-runs** - The ansible_config_main.sh script automatically runs to configure new nodes.
 
 ### Example: Adding Storage Servers
 
@@ -473,7 +473,7 @@ When adding new storage servers to an existing deployment:
 - PUT request preserves all required fields (`uoid`, `internalId`, etc.)
 - No manual intervention required
 
-### What Gets Re-Configured
+### Reconfiguration
 
 When changes are detected:
 - Updated inventory file uploaded to Ansible controller
