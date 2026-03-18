@@ -1,0 +1,237 @@
+#=============================================================================
+# OCI AUTHENTICATION
+# API credentials for connecting to Oracle Cloud Infrastructure
+#=============================================================================
+tenancy_ocid     = "ocid1.tenancy.oc1..xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+user_ocid        = "ocid1.user.oc1..xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+fingerprint      = "xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx:xx"
+private_key_path = "oci/oci_api_key.pem"
+region           = "us-sanjose-1"
+api_key          = "oci/oci_api_key.pem"
+config_file      = "oci/config"
+
+#=============================================================================
+# NETWORKING
+# VCN and subnet configuration - use existing or create new
+#=============================================================================
+compartment_ocid = "ocid1.compartment.oc1..xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+vcn_id           = "ocid1.vcn.oc1.us-sanjose-1.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+subnet_id        = "ocid1.subnet.oc1.us-sanjose-1.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+
+# Set create_networking = true to create new VCN/subnet instead of using existing
+create_networking                   = false
+create_nat_gateway_for_existing_vcn = false
+vcn_cidr                            = "10.0.0.0/16"
+subnet_cidr                         = "10.0.1.0/24"
+
+#=============================================================================
+# PLACEMENT & AVAILABILITY
+# Control where instances are deployed within the region
+#=============================================================================
+ad_number           = 1                                       # Availability Domain (1, 2, or 3)
+fault_domain        = ""                                      # For non-Anvil instances
+anvil_fault_domains = ["FAULT-DOMAIN-1", "FAULT-DOMAIN-2"]    # HA: place Anvils in different FDs
+dsx_fault_domains   = []                                      # Distribute DSX across FDs (round-robin)
+
+#=============================================================================
+# PROJECT SETTINGS
+# Naming and authentication for deployed resources
+#=============================================================================
+deployment_name     = "myproject"
+project_name        = "myproject"       # Prefix for all resource names
+domainname          = "localdomain"
+admin_user_password = "YourSecurePassword123!"    # Hammerspace admin password
+tags                = {}
+
+#=============================================================================
+# SSH & CONNECTIVITY
+# SSH access and public IP assignment
+#=============================================================================
+ssh_public_key   = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQ..."
+ssh_keys_dir     = "ssh_keys"
+assign_public_ip = true                 # Set false for private deployment (requires NAT gateway)
+
+#=============================================================================
+# COMPONENT SELECTION
+# Choose which components to deploy
+# Options: "all", "hammerspace", "ecgroup", "storage", "ansible", "bastion", "clients"
+#=============================================================================
+deploy_components = ["hammerspace", "ansible"]
+
+#=============================================================================
+# HAMMERSPACE ANVIL
+# Metadata server - the core of Hammerspace (standalone or HA pair)
+#=============================================================================
+hammerspace_anvil_count          = 1      # 1 = standalone, 2 = HA pair
+hammerspace_anvil_image_id       = "ocid1.image.oc1.us-sanjose-1.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+hammerspace_anvil_instance_shape = "VM.Standard.E4.Flex"
+hammerspace_anvil_ocpus          = 4
+hammerspace_anvil_memory_gbs     = 32
+
+# Metadata disk
+hammerspace_anvil_meta_disk_size       = 200
+hammerspace_anvil_meta_disk_type       = "paravirtualized"
+hammerspace_anvil_meta_disk_iops       = null
+hammerspace_anvil_meta_disk_throughput = null
+
+# Advanced settings
+hammerspace_anvil_security_group_id = ""
+hammerspace_anvil_enable_sriov      = false    # Keep false for Hammerspace images
+hammerspace_sa_anvil_destruction    = true     # Allow terraform destroy on standalone Anvil
+
+# Use existing Anvil instead of creating new
+hammerspace_use_existing_anvil      = false
+hammerspace_existing_anvil_ips      = []
+hammerspace_existing_anvil_password = ""
+
+#=============================================================================
+# HAMMERSPACE DSX
+# Data services nodes - provides NFS/SMB access and storage capacity
+#=============================================================================
+hammerspace_dsx_count          = 1
+hammerspace_dsx_image_id       = "ocid1.image.oc1.us-sanjose-1.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+hammerspace_dsx_instance_shape = "VM.Standard.E4.Flex"
+hammerspace_dsx_ocpus          = 4
+hammerspace_dsx_memory_gbs     = 32
+
+# Block volumes attached to each DSX
+hammerspace_dsx_block_volume_count      = 2
+hammerspace_dsx_block_volume_size       = 500   # GB per volume
+hammerspace_dsx_block_volume_type       = "paravirtualized"
+hammerspace_dsx_block_volume_iops       = null
+hammerspace_dsx_block_volume_throughput = null
+
+# Advanced settings
+hammerspace_dsx_security_group_id = ""
+hammerspace_dsx_enable_sriov      = false
+hammerspace_dsx_add_vols          = true       # Auto-add volumes to Hammerspace
+
+# Use existing DSX instead of creating new
+hammerspace_use_existing_dsx = false
+hammerspace_existing_dsx_ips = []
+
+#=============================================================================
+# ECGROUP (RozoFS)
+# Erasure-coded distributed storage backend
+# Supports DenseIO shapes (local NVMe) or Standard shapes (block storage)
+#=============================================================================
+ecgroup_node_count     = 4
+ecgroup_image_id       = "ocid1.image.oc1.us-sanjose-1.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"  # Rocky 9.x
+
+# Shape: VM.DenseIO.E5.Flex (NVMe) or VM.Standard.E4.Flex (block storage)
+ecgroup_instance_shape = "VM.DenseIO.E5.Flex"
+ecgroup_ocpus          = 16
+ecgroup_memory_gbs     = 192    # DenseIO.E5.Flex requires 12 GB per OCPU
+
+# Boot volume
+ecgroup_boot_volume_size = 200
+ecgroup_boot_volume_type = "paravirtualized"
+
+# Metadata volume (for RozoFS metadata)
+ecgroup_metadata_volume_size       = 200
+ecgroup_metadata_volume_type       = "paravirtualized"
+ecgroup_metadata_volume_iops       = null
+ecgroup_metadata_volume_throughput = null
+
+# Storage volumes (set count = 0 for DenseIO to use local NVMe)
+ecgroup_storage_volume_count      = 0     # 0 = use NVMe, >0 = create block volumes
+ecgroup_storage_volume_size       = 200
+ecgroup_storage_volume_type       = "paravirtualized"
+ecgroup_storage_volume_iops       = null
+ecgroup_storage_volume_throughput = null
+
+ecgroup_user_data = "./templates/ecgroup_node_unified.sh"
+
+# Hammerspace integration - auto-add ECGroup storage to Hammerspace
+ecgroup_add_to_hammerspace  = true
+ecgroup_volume_group_name   = "ecgroup-vg"
+ecgroup_share_name          = "ecgroup-share"
+ecgroup_share_path          = "/ecgroup"
+ecgroup_share_export_path   = "/ecgroup"
+ecgroup_share_description   = "ECGroup share"
+add_ecgroup_volumes         = true
+
+#=============================================================================
+# STORAGE SERVERS
+# Generic storage nodes with RAID support
+#=============================================================================
+storage_instance_count = 2
+storage_image_id       = "ocid1.image.oc1.us-sanjose-1.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"  # Ubuntu 24.04
+storage_instance_shape = "VM.Standard.E4.Flex"
+storage_ocpus          = 2
+storage_memory_gbs     = 16
+
+# Boot volume
+storage_boot_volume_size = 50
+storage_boot_volume_type = "paravirtualized"
+
+# Block volumes
+storage_block_volume_count      = 4
+storage_block_volume_size       = 200
+storage_block_volume_type       = "paravirtualized"
+storage_block_volume_iops       = null
+storage_block_volume_throughput = null
+storage_raid_level              = "raid-0"    # raid-0, raid-1, raid-5, raid-6, raid-10
+
+storage_user_data   = "./templates/storage_server.sh"
+storage_target_user = "ubuntu"
+
+# Hammerspace integration
+add_storage_server_volumes = true
+volume_group_name          = "storage-vg"
+share_name                 = "storage-share"
+share_path                 = "/hammerspace"
+share_export_path          = "/hammerspace"
+share_description          = "Hammerspace share"
+
+#=============================================================================
+# ANSIBLE CONTROLLER
+# Automated configuration and Hammerspace integration
+#=============================================================================
+ansible_instance_count   = 1
+ansible_image_id         = "ocid1.image.oc1.us-sanjose-1.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"  # Ubuntu 24.04
+ansible_instance_shape   = "VM.Standard.E5.Flex"
+ansible_ocpus            = 2
+ansible_memory_gbs       = 16
+ansible_boot_volume_size = 200
+ansible_boot_volume_type = "paravirtualized"
+ansible_user_data        = "./templates/ansible_config_ubuntu.sh"
+ansible_target_user      = "ubuntu"
+
+#=============================================================================
+# CLIENT INSTANCES
+# NFS/SMB clients for testing and workloads
+#=============================================================================
+clients_instance_count = 2
+clients_image_id       = "ocid1.image.oc1.us-sanjose-1.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"  # Ubuntu 24.04
+clients_instance_shape = "VM.Standard.E4.Flex"
+clients_ocpus          = 2
+clients_memory_gbs     = 16
+
+# Boot volume
+clients_boot_volume_size = 50
+clients_boot_volume_type = "paravirtualized"
+
+# Block volumes
+clients_block_volume_count      = 1
+clients_block_volume_size       = 50
+clients_block_volume_type       = "paravirtualized"
+clients_block_volume_iops       = null
+clients_block_volume_throughput = null
+
+clients_user_data   = "./templates/client_config.sh"
+clients_target_user = "ubuntu"
+
+#=============================================================================
+# BASTION HOST
+# SSH jump host for secure access to private instances
+#=============================================================================
+bastion_instance_count   = 0
+bastion_image_id         = "ocid1.image.oc1.us-sanjose-1.xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"  # Ubuntu 24.04
+bastion_instance_shape   = "VM.Standard.E5.Flex"
+bastion_ocpus            = 2
+bastion_memory_gbs       = 16
+bastion_boot_volume_size = 200
+bastion_boot_volume_type = "paravirtualized"
+bastion_user_data        = "./templates/ansible_config_ubuntu.sh"
+bastion_target_user      = "ubuntu"
